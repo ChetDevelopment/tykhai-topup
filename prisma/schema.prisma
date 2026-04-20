@@ -1,0 +1,429 @@
+// Prisma schema for Ty Khai TopUp
+// Local dev: sqlite (file:./dev.db)
+// Production (Vercel/Neon): change provider to "postgresql" and run `prisma db push`
+generator client {
+  provider      = "prisma-client-js"
+  // Vercel lambdas run on Amazon Linux 2023 (openssl 3.0). Without this the
+  // generated engine binary won't load in production.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Game {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  publisher   String
+  description String?
+  imageUrl    String
+  bannerUrl   String?
+  currencyName String   // e.g. "Diamonds", "UC", "Genesis Crystals"
+  uidLabel    String   @default("Player ID")
+  uidExample  String?  // e.g. "12345678 (1234)"
+  requiresServer Boolean @default(false)
+  // JSON-encoded string array (SQLite has no native array type)
+  servers     String    @default("[]")
+  featured    Boolean   @default(false)
+  active      Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  seoTitle       String?
+  seoDescription String?
+  products    Product[]
+  orders      Order[]
+  savedUids   SavedUid[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  gameId      String
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  name        String   // e.g. "86 Diamonds"
+  amount      Int      // 86
+  bonus       Int      @default(0) // bonus diamonds
+  priceUsd    Float    // price in USD
+  resellerPriceUsd Float? // Wholesale price for agents
+  officialPriceUsd Float? // For Price Match Ticker
+  priceKhr    Float?   // price in Cambodian Riel (optional auto-calc)
+  salePriceUsd Float?   // Flash sale price
+  saleEndsAt   DateTime? // When flash sale ends
+  isMysteryBox  Boolean  @default(false)
+  isSubscriptionAvailable Boolean @default(false)
+  badge       String?  // "Best Value", "Hot", "New"
+  imageUrl    String?
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  orders      Order[]
+  reviews     Review[]
+  rewards     MysteryBoxReward[]
+  wishlists   Wishlist[]
+  priceAlerts PriceAlert[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([gameId, active])
+}
+
+model Order {
+  id             String       @id @default(cuid())
+  orderNumber    String       @unique // human-friendly: TY-XXXXXX
+  gameId         String
+  game           Game         @relation(fields: [gameId], references: [id])
+  productId      String
+  product        Product      @relation(fields: [productId], references: [id])
+  playerUid      String
+  serverId       String?
+  playerNickname String?      // optional nickname pulled after validation
+  customerEmail  String?
+  customerPhone  String?
+  amountUsd      Float
+  amountKhr      Float?
+  currency       String       @default("USD")
+  paymentMethod  String       // ABA_PAY | BINANCE_PAY | MANUAL
+  paymentRef     String?      // gateway transaction id
+  paymentUrl     String?      // redirect URL from gateway
+  qrString       String?      // KHQR EMV payload (for on-site display)
+  paymentExpiresAt DateTime?  // QR/payment expiry time
+  status         String       @default("PENDING") // PENDING | PAID | PROCESSING | DELIVERED | FAILED | REFUNDED | CANCELLED
+  deliveryNote   String?      // admin notes about delivery
+  failureReason  String?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  paidAt         DateTime?
+  deliveredAt    DateTime?
+  promoCodeId    String?
+  promoCode      PromoCode? @relation(fields: [promoCodeId], references: [id])
+  discountUsd    Float      @default(0)
+  pointsEarned   Int        @default(0)
+  pointsUsed     Int        @default(0)
+  isSubscription Boolean    @default(false)
+  squadPoolId    String?
+  squadPool      SquadPool? @relation(fields: [squadPoolId], references: [id])
+  userId         String?
+  user           User?      @relation(fields: [userId], references: [id])
+  review         Review?
+  tickets        Ticket[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([customerEmail])
+}
+
+model PromoCode {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  discountType  String    // PERCENT | FIXED
+  discountValue Float     // e.g. 10 for 10% or 0.50 for $0.50
+  minOrderUsd   Float     @default(0)
+  maxUses       Int       @default(0) // 0 = unlimited
+  usedCount     Int       @default(0)
+  expiresAt     DateTime?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  orders        Order[]
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  role         String    @default("ADMIN") // ADMIN | SUPERADMIN
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  lastLoginAt  DateTime?
+}
+
+model Settings {
+  id          Int      @id @default(1)
+  siteName    String   @default("Ty Khai TopUp")
+  exchangeRate Float   @default(4100) // KHR per 1 USD
+  supportTelegram String? @default("@Vichet_SAT")
+  supportEmail String? @default("support@tykhai.com")
+  maintenanceMode Boolean @default(false)
+  maintenanceMessage String?
+  announcement String?
+  announcementTone String? @default("info") // info | warning | promo
+  popupActive      Boolean @default(false)
+  popupTitle       String?
+  popupContent     String?
+  popupImageUrl     String?
+  telegramBotToken String?
+  telegramChatId   String?
+  updatedAt   DateTime @updatedAt
+}
+
+model HeroBanner {
+  id        String   @id @default(cuid())
+  title     String
+  subtitle  String?
+  imageUrl  String
+  linkUrl   String?
+  ctaLabel  String?
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  category  String   @default("general")
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BlogPost {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  excerpt     String?
+  content     String    // plain text / lightweight HTML
+  coverUrl    String?
+  tag         String?
+  published   Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([published, publishedAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  adminEmail String?
+  action     String   // e.g. order.mark_paid, banner.create, game.update
+  targetType String?  // order | game | banner | faq | blog | banlist | settings
+  targetId   String?
+  details    String?  // JSON-encoded metadata
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+}
+
+model BlockedIdentity {
+  id        String   @id @default(cuid())
+  type      String   // email | phone | ip | uid
+  value     String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([type, value])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  name          String?
+  image         String?
+  role          String      @default("USER") // USER | RESELLER | RESELLER_PENDING | SUB_RESELLER
+  pointsBalance Int       @default(0)
+  walletBalance Float     @default(0)
+  totalSpentUsd Float       @default(0)
+  vipRank       String      @default("BRONZE") // BRONZE, SILVER, GOLD, DIAMOND_LEGEND
+  resellerTier  String?    // BRONZE | SILVER | GOLD for resellers
+  resellerDiscount Float   @default(0) // wholesale discount %
+  parentResellerId String?
+  parentReseller   User?     @relation("ResellerNetwork", fields: [parentResellerId], references: [id])
+  subResellers    User[]    @relation("ResellerNetwork")
+  referredById   String?
+  referredBy    User?     @relation("ReferralNetwork", fields: [referredById], references: [id])
+  referrer      User[]    @relation("ReferralNetwork")
+  referralEarnings Float   @default(0)
+  pushSubscription String?
+  accounts      Account[]
+  sessions      Session[]
+  savedUids     SavedUid[]
+  orders        Order[]
+  points        PointTransaction[]
+  subscriptions Subscription[]
+  tickets       Ticket[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model SavedUid {
+  id        String   @id @default(cuid())
+  userId    String
+  gameId    String
+  playerUid String
+  user      User     @relation(fields: [userId], references: [id])
+  game      Game     @relation(fields: [gameId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, gameId, playerUid])
+}
+
+model Review {
+  id          String   @id @default(cuid())
+  orderId     String   @unique
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  rating      Int      @default(5)
+  comment     String?
+  customerName String
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model PointTransaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Int      // positive for earned, negative for spent
+  type      String   // PURCHASE | REFERRAL | REDEEM | ADMIN
+  orderId   String?
+  createdAt DateTime @default(now())
+}
+
+model SquadPool {
+  id          String   @id @default(cuid())
+  productId   String
+  leaderId    String
+  targetSize  Int      @default(5)
+  currentSize Int      @default(1)
+  status      String   @default("OPEN") // OPEN, COMPLETED, EXPIRED
+  expiresAt   DateTime
+  orders      Order[]
+  createdAt   DateTime @default(now())
+}
+
+model MysteryBoxReward {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name        String   // e.g. "500 Diamonds"
+  amount      Int
+  probability Float    // e.g. 0.01 for 1%
+  isJackpot   Boolean  @default(false)
+}
+
+model Subscription {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameId      String
+  productId   String
+  intervalDays Int      @default(7)
+  nextRunAt   DateTime
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  product    Product   @relation(fields: [productId], references: [id])
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, productId])
+}
+
+model PriceAlert {
+  id          String   @id @default(cuid())
+  userId      String
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  targetPrice Float
+  notified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+
+  @@unique([userId, productId])
+}
+
+model Bundle {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  products    String    // JSON array of product IDs
+  bundlePrice Float     // discounted price
+  originalPrice Float    // sum of individual prices
+  badge       String?
+  active      Boolean   @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model SpinWin {
+  id          String   @id @default(cuid())
+  userId     String
+  prize      String   // "50_points", "$5_discount", "free_diamond"
+  prizeValue Int      // 50 or 500 (cents for $5)
+  won        Boolean  @default(true)
+  claimed    Boolean  @default(false)
+  createdAt  DateTime  @default(now())
+}
+
+model Ticket {
+  id          String    @id @default(cuid())
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
+  orderId     String?
+  order       Order?    @relation(fields: [orderId], references: [id])
+  subject     String
+  category    String    // ORDER_ISSUE | REFUND | GENERAL | BUG
+  status      String    @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED | CLOSED
+  priority    String    @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  message     String
+  response    String?
+  adminId     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}

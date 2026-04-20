@@ -1,0 +1,283 @@
+import { prisma } from "@/lib/prisma";
+export const dynamic = "force-dynamic";
+
+import { generateOrderNumber, isValidUid, calcKhr } from "@/lib/utils";
+import { initiatePayment, PaymentCurrency } from "@/lib/payment";
+import { getCurrentUser, updateUserTotalSpent } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { isRealEmail } from "@/lib/email-validator";
+
+const createOrderSchema = z.object({
+  gameId: z.string().min(1),
+  productId: z.string().min(1),
+  playerUid: z.string().min(4).max(20),
+  serverId: z.string().optional(),
+  customerEmail: z.string().email().optional(),
+  customerPhone: z.string().optional(),
+  paymentMethod: z.enum(["KHPAY", "WALLET"]),
+  currency: z.enum(["USD", "KHR"]).optional().default("USD"),
+  promoCode: z.string().optional(),
+  playerNickname: z.string().max(100).optional(),
+  usePoints: z.number().min(0).optional().default(0),
+});
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const parsed = createOrderSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid request", details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+    const data = parsed.data;
+
+    if (data.customerEmail) {
+      const emailValid = await isRealEmail(data.customerEmail);
+      if (!emailValid) {
+        return NextResponse.json(
+          { error: "Please use a real email address" },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (!isValidUid(data.playerUid)) {
+      return NextResponse.json({ error: "Invalid UID format" }, { status: 400 });
+    }
+
+    // Maintenance mode blocks new orders site-wide.
+    const maintSettings = await prisma.settings.findUnique({ where: { id: 1 } });
+    if (maintSettings?.maintenanceMode) {
+      return NextResponse.json(
+        { error: maintSettings.maintenanceMessage || "Ordering is temporarily disabled for maintenance." },
+        { status: 503 }
+      );
+    }
+
+    // Banlist: block orders from flagged emails, phones, IPs or UIDs.
+    const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    const banCandidates = [
+      { type: "email", value: data.customerEmail?.toLowerCase() },
+      { type: "phone", value: data.customerPhone?.toLowerCase() },
+      { type: "ip", value: ipAddress.toLowerCase() },
+      { type: "uid", value: data.playerUid.toLowerCase() },
+    ].filter((c): c is { type: string; value: string } => !!c.value);
+
+    if (banCandidates.length > 0) {
+      const blocked = await prisma.blockedIdentity.findFirst({
+        where: { OR: banCandidates.map((c) => ({ type: c.type, value: c.value })) },
+      });
+      if (blocked) {
+        return NextResponse.json(
+          { error: "This order cannot be processed. Contact support if you believe this is a mistake." },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Validate game + product match and pricing
+    const [game, product, settings] = await Promise.all([
+      prisma.game.findUnique({ where: { id: data.gameId } }),
+      prisma.product.findUnique({ where: { id: data.productId } }),
+      prisma.settings.findUnique({ where: { id: 1 } }),
+    ]);
+
+    if (!game || !game.active) {
+      return NextResponse.json({ error: "Game not found" }, { status: 404 });
+    }
+    if (!product || !product.active || product.gameId !== game.id) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+    if (game.requiresServer && !data.serverId) {
+      return NextResponse.json({ error: "Server is required for this game" }, { status: 400 });
+    }
+
+    // Create the order
+    const orderNumber = generateOrderNumber();
+    const userAgent = req.headers.get("user-agent") ?? "unknown";
+    const exchangeRate = settings?.exchangeRate ?? 4100;
+    const user = await getCurrentUser();
+
+    // Promo code handling
+    let promoCodeId: string | null = null;
+    let discountUsd = 0;
+    let finalPrice = product.priceUsd;
+
+    if (data.promoCode) {
+      const promo = await prisma.promoCode.findUnique({
+        where: { code: data.promoCode.toUpperCase().trim() },
+      });
+      if (
+        promo &&
+        promo.active &&
+        (!promo.expiresAt || promo.expiresAt >= new Date()) &&
+        (promo.maxUses === 0 || promo.usedCount < promo.maxUses) &&
+        product.priceUsd >= promo.minOrderUsd
+      ) {
+        discountUsd =
+          promo.discountType === "PERCENT"
+            ? (product.priceUsd * promo.discountValue) / 100
+            : promo.discountValue;
+        discountUsd = Math.min(discountUsd, product.priceUsd);
+        discountUsd = Math.round(discountUsd * 100) / 100;
+        finalPrice = Math.round((product.priceUsd - discountUsd) * 100) / 100;
+        promoCodeId = promo.id;
+
+        // Increment usage count
+        await prisma.promoCode.update({
+          where: { id: promo.id },
+          data: { usedCount: { increment: 1 } },
+        });
+      }
+    }
+
+    // Automatic 2% Member Discount (One-time per product)
+    if (user) {
+      const hasBoughtBefore = await prisma.order.findFirst({
+        where: {
+          userId: user.userId,
+          productId: product.id,
+          status: { in: ["PAID", "DELIVERED", "PROCESSING"] }
+        }
+      });
+
+      if (!hasBoughtBefore) {
+        const memberDiscount = Math.round((finalPrice * 0.02) * 100) / 100;
+        finalPrice = Math.round((finalPrice - memberDiscount) * 100) / 100;
+        discountUsd = Math.round((discountUsd + memberDiscount) * 100) / 100;
+      }
+    }
+
+    // Points redemption (100 points = $1 discount)
+    let pointsUsed = 0;
+    let pointsDiscount = 0;
+    if (data.usePoints && data.usePoints > 0 && user) {
+      const pointsBalance = user.pointsBalance || 0;
+      const maxPoints = Math.min(data.usePoints, pointsBalance);
+      pointsUsed = maxPoints;
+      pointsDiscount = Math.round((maxPoints / 100) * 100) / 100;
+      finalPrice = Math.max(0, Math.round((finalPrice - pointsDiscount) * 100) / 100);
+      discountUsd = Math.round((discountUsd + pointsDiscount) * 100) / 100;
+    }
+
+    // Wallet payment: deduct from balance and mark paid directly
+    let walletDeducted = false;
+    if (data.paymentMethod === "WALLET" && user && finalPrice > 0) {
+      const walletBalance = user.walletBalance || 0;
+      if (walletBalance >= finalPrice) {
+        walletDeducted = true;
+        await prisma.user.update({
+          where: { id: user.userId },
+          data: { walletBalance: { decrement: finalPrice } }
+        });
+      }
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+
+    const order = await prisma.order.create({
+      data: {
+        orderNumber,
+        gameId: game.id,
+        productId: product.id,
+        playerUid: data.playerUid,
+        serverId: data.serverId,
+        playerNickname: data.playerNickname,
+        customerEmail: data.customerEmail,
+        customerPhone: data.customerPhone,
+        amountUsd: finalPrice,
+        amountKhr: calcKhr(finalPrice, exchangeRate),
+        currency: data.currency,
+        paymentMethod: data.paymentMethod,
+        status: walletDeducted ? "PAID" : "PENDING",
+        ipAddress,
+        userAgent,
+        promoCodeId,
+        discountUsd,
+        pointsUsed,
+        userId: user?.userId,
+      },
+    });
+
+    // Handle wallet payment - no gateway needed
+    if (walletDeducted) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          paidAt: new Date(),
+          status: "PROCESSING",
+          paymentRef: `WALLET-${orderNumber}`,
+        },
+      });
+
+      if (pointsUsed > 0 && user) {
+        await prisma.user.update({
+          where: { id: user.userId },
+          data: { pointsBalance: { decrement: pointsUsed } }
+        });
+      }
+
+      if (user) {
+        await updateUserTotalSpent(user.userId, finalPrice);
+      }
+
+      return NextResponse.json({
+        orderNumber: order.orderNumber,
+        redirectUrl: `${baseUrl}/order?number=${order.orderNumber}`,
+        walletPaid: true,
+      });
+    }
+
+    // Handle insufficient wallet
+    if (data.paymentMethod === "WALLET" && finalPrice > 0 && user && (!user.walletBalance || user.walletBalance < finalPrice)) {
+      return NextResponse.json({
+        error: "Insufficient wallet balance",
+        redirectUrl: `${baseUrl}/checkout/${order.orderNumber}`,
+        pendingWalletPayment: true,
+      });
+    }
+
+    // KHQR payment gateway
+    const publicUrl = process.env.PUBLIC_APP_URL || baseUrl;
+    const init = await initiatePayment({
+      orderNumber: order.orderNumber,
+      amountUsd: order.amountUsd,
+      amountKhr: order.amountKhr,
+      currency: order.currency as PaymentCurrency,
+      method: "KHPAY",
+      returnUrl: `${publicUrl}/order?number=${order.orderNumber}`,
+      cancelUrl: `${publicUrl}/games/${game.slug}`,
+      callbackUrl: `${publicUrl}/api/payment/webhook/khpay`,
+      note: `Ty Khai TopUp · ${game.name} · ${product.name}`,
+      customerEmail: data.customerEmail,
+      metadata: {
+        game_slug: game.slug,
+        product_name: product.name,
+        player_uid: data.playerUid,
+      },
+    });
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        paymentRef: init.paymentRef,
+        paymentUrl: init.redirectUrl,
+        qrString: init.qrString ?? null,
+        paymentExpiresAt: init.expiresAt,
+      },
+    });
+
+    return NextResponse.json({
+      orderNumber: order.orderNumber,
+      redirectUrl: `${baseUrl}/checkout/${order.orderNumber}`,
+    });
+  } catch (err) {
+    console.error("Order create error:", err);
+    const msg = err instanceof Error ? err.message : "Internal server error";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
