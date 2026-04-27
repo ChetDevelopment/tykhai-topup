@@ -117,16 +117,23 @@ export default function CheckoutPage() {
       const res = await fetch(`/api/orders/${encodeURIComponent(orderNumber)}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Order not found");
       const data = await res.json();
-      setOrder(data);
-
+      
       // Show popup immediately when status changes to DELIVERED/PAID
       const prevStatus = order?.status;
       const newStatus = data.status;
-      if (newStatus === "DELIVERED" || newStatus === "PAID") {
+      if ((newStatus === "DELIVERED" || newStatus === "PAID") && prevStatus !== "DELIVERED" && prevStatus !== "PAID") {
         setShowReceipt(true);
         setHasAutoOpened(true);
-        alert("PAYMENT SUCCESSFUL!\n\nYour order has been delivered. Check your game account now.");
+        // Also show success toast message
+        const toast = document.getElementById('success-toast');
+        if (toast) {
+          toast.classList.remove('hidden');
+          toast.classList.add('animate-bounce');
+          setTimeout(() => toast.classList.add('hidden'), 5000);
+        }
       }
+      
+      setOrder(data);
       
       return data;
     } catch (err: any) {
@@ -192,6 +199,17 @@ export default function CheckoutPage() {
       <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-royal-primary/10 to-transparent pointer-events-none" />
       
       <Header />
+
+      {/* Success Toast */}
+      <div id="success-toast" className="hidden fixed top-24 left-1/2 -translate-x-1/2 z-[200] bg-green-500 text-white px-8 py-4 rounded-2xl shadow-2xl border-2 border-green-400 animate-bounce">
+        <div className="flex items-center gap-3">
+          <CheckCircle2 size={32} className="text-white" />
+          <div>
+            <div className="font-black text-lg">PAYMENT SUCCESSFUL!</div>
+            <div className="text-sm text-green-100">Your order has been delivered</div>
+          </div>
+        </div>
+      </div>
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 py-12 relative z-10">
         {loading ? (
