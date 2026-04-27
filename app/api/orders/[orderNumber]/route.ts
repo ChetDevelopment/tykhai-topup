@@ -26,6 +26,7 @@ export async function GET(
   if (order.status === "PENDING" && order.paymentRef && !order.paymentRef.startsWith("SIM-")) {
     try {
       const remote = await checkBakongPayment(order.paymentRef);
+      console.log("[order] checkBakongPayment:", order.paymentRef, "→", remote);
 
       if (remote) {
         const isPaid = remote?.paid === true || remote?.status === "paid";
