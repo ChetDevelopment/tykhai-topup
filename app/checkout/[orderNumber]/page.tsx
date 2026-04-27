@@ -123,6 +123,7 @@ export default function CheckoutPage() {
       if (PAID_STATES.has(data.status) && !hasAutoOpened) {
         setShowReceipt(true);
         setHasAutoOpened(true);
+        alert("PAYMENT SUCCESSFUL! Your order has been delivered.");
       }
       
       return data;
