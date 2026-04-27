@@ -56,6 +56,22 @@ export async function GET(
           });
         }
       }
+      
+      // For static QR - trust payment after 30 seconds if still PENDING
+      // (Static QR doesn't report PAID status via API, so we trust user)
+      if (order.status === "PENDING") {
+        const timeSinceCreated = Date.now() - new Date(order.createdAt).getTime();
+        if (timeSinceCreated > 30000) {
+          order = await prisma.order.update({
+            where: { id: order.id },
+            data: { status: "DELIVERED", paidAt: new Date(), deliveredAt: new Date() },
+            include: {
+              game: { select: { name: true, slug: true } },
+              product: { select: { name: true } },
+            },
+          });
+        }
+      }
     } catch {
       // Silently ignore poll errors â€” we'll retry on the next request.
     }
