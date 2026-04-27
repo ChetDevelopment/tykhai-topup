@@ -100,6 +100,7 @@ export default function CheckoutPage() {
   const [activeTab, setActiveTab] = useState<"receipt" | "review">("receipt");
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     fetch("/api/user/me")
@@ -129,6 +130,21 @@ export default function CheckoutPage() {
       return null;
     }
   }, [orderNumber, hasAutoOpened]);
+
+  const handleCancel = async () => {
+    if (!confirm("Are you sure you want to cancel this order?")) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderNumber)}/cancel`, { method: "POST" });
+      if (res.ok) {
+        window.location.href = "/";
+      }
+    } catch {
+      setError("Failed to cancel order");
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -328,6 +344,14 @@ export default function CheckoutPage() {
                           </div>
                         </div>
                       </div>
+
+                      <button
+                        onClick={handleCancel}
+                        disabled={cancelling || isPaid || isExpired}
+                        className="w-full mt-4 p-3 rounded-xl border border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-widest hover:bg-red-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {cancelling ? "CANCELLING..." : "Cancel Payment"}
+                      </button>
                     </div>
                   </div>
                 </div>
