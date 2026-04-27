@@ -101,6 +101,7 @@ export default function CheckoutPage() {
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   useEffect(() => {
     fetch("/api/user/me")
@@ -132,11 +133,11 @@ export default function CheckoutPage() {
   }, [orderNumber, hasAutoOpened]);
 
   const handleCancel = async () => {
-    if (!confirm("Are you sure you want to cancel this order?")) return;
     setCancelling(true);
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(orderNumber)}/cancel`, { method: "POST" });
       if (res.ok) {
+        setShowCancelModal(false);
         window.location.href = "/";
       }
     } catch {
@@ -346,11 +347,11 @@ export default function CheckoutPage() {
                       </div>
 
                       <button
-                        onClick={handleCancel}
+                        onClick={() => setShowCancelModal(true)}
                         disabled={cancelling || isPaid || isExpired}
                         className="w-full mt-4 p-3 rounded-xl border border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-widest hover:bg-red-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {cancelling ? "CANCELLING..." : "Cancel Payment"}
+                        Cancel Payment
                       </button>
                     </div>
                   </div>
@@ -421,15 +422,46 @@ export default function CheckoutPage() {
                 >
                   {simulating ? "SIMULATING..." : "DEBUG: FORCE SYNC PAYMENT"}
                 </button>
-              )}
-            </div>
-          </div>
-        )}
+)}
+             </div>
+           </div>
+         )}
       </main>
 
-      <Footer />
+      {/* Cancel Modal */}
+      {showCancelModal && order && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="w-full max-w-sm card p-0 overflow-hidden">
+            <div className="p-6 text-center">
+              <div className="h-16 w-16 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle size={32} className="text-red-400" />
+              </div>
+              <h2 className="text-xl font-black uppercase mb-2">Cancel Payment?</h2>
+              <p className="text-royal-muted text-sm mb-6">
+                Are you sure you want to cancel this order? Your payment will not be processed.
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={handleCancel}
+                  disabled={cancelling}
+                  className="w-full p-4 rounded-xl bg-red-500 text-white font-bold uppercase tracking-widest hover:bg-red-600 transition-colors disabled:opacity-50"
+                >
+                  {cancelling ? "Cancelling..." : "Yes, Cancel"}
+                </button>
+                <button
+                  onClick={() => setShowCancelModal(false)}
+                  disabled={cancelling}
+                  className="w-full p-4 rounded-xl bg-royal-card border border-royal-border text-royal-text font-bold uppercase tracking-widest hover:bg-royal-bg transition-colors"
+                >
+                  No, Keep Order
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* AUTO-RECEIPT MODAL */}
+      {/* Receipt Modal */}
       {showReceipt && order && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in">
           <div className="relative w-full max-w-lg card p-0 overflow-hidden shadow-[0_0_50px_rgba(99,102,241,0.3)] animate-scale-in">
