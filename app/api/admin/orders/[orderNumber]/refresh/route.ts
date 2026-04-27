@@ -2,12 +2,12 @@
 export const dynamic = "force-dynamic";
 
 import { writeAudit } from "@/lib/audit";
-import { fetchKhpayStatus } from "@/lib/payment";
+import { checkBakongPayment } from "@/lib/payment";
 import { updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Admin debug endpoint: pulls the latest KHPay status for an order
+ * Admin debug endpoint: pulls the latest Bakong status for an order
  * and, if paid, flips the order to PAID.
  */
 export async function POST(
@@ -20,13 +20,13 @@ export async function POST(
   if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   if (!order.paymentRef || order.paymentRef.startsWith("SIM-")) {
-    return NextResponse.json({ error: "No KHPay reference on order" }, { status: 400 });
+    return NextResponse.json({ error: "No Bakong reference on order" }, { status: 400 });
   }
 
-  const remote = await fetchKhpayStatus(order.paymentRef);
+  const remote = await checkBakongPayment(order.paymentRef);
 
   let updated = order;
-  if (remote && (remote.paid || remote.status === "paid") && order.status === "PENDING") {
+  if (remote && remote.paid && order.status === "PENDING") {
     updated = await prisma.order.update({
       where: { id: order.id },
       data: { status: "PAID", paidAt: new Date() },
@@ -35,7 +35,7 @@ export async function POST(
       await updateUserTotalSpent(order.userId, order.amountUsd);
     }
     await writeAudit({
-      action: "order.khpay_refresh.auto_paid",
+      action: "order.bakong_refresh.auto_paid",
       targetType: "order",
       targetId: order.id,
       details: { paymentRef: order.paymentRef, remote },
@@ -47,10 +47,10 @@ export async function POST(
   ) {
     updated = await prisma.order.update({
       where: { id: order.id },
-      data: { status: "FAILED", failureReason: `KHPay: ${remote.status}` },
+      data: { status: "FAILED", failureReason: `Bakong: ${remote.status}` },
     });
     await writeAudit({
-      action: "order.khpay_refresh.auto_failed",
+      action: "order.bakong_refresh.auto_failed",
       targetType: "order",
       targetId: order.id,
       details: { paymentRef: order.paymentRef, remote },
@@ -58,7 +58,7 @@ export async function POST(
   }
 
   await writeAudit({
-    action: "order.khpay_refresh",
+    action: "order.bakong_refresh",
     targetType: "order",
     targetId: order.id,
     details: { paymentRef: order.paymentRef, remote },

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { generateOrderNumber, isValidUid, calcKhr } from "@/lib/utils";
-import { initiatePayment, PaymentCurrency } from "@/lib/payment";
+import { initiatePayment, PaymentMethod, PaymentCurrency } from "@/lib/payment";
 import { getCurrentUser, updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -15,7 +15,7 @@ const createOrderSchema = z.object({
   serverId: z.string().optional(),
   customerEmail: z.string().email().optional(),
   customerPhone: z.string().optional(),
-  paymentMethod: z.enum(["KHPAY", "WALLET"]),
+  paymentMethod: z.enum(["WALLET", "BAKONG"]),
   currency: z.enum(["USD", "KHR"]).optional().default("USD"),
   promoCode: z.string().optional(),
   playerNickname: z.string().max(100).optional(),
@@ -240,17 +240,17 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // KHQR payment gateway
+    // Payment gateway
     const publicUrl = process.env.PUBLIC_APP_URL || baseUrl;
     const init = await initiatePayment({
       orderNumber: order.orderNumber,
       amountUsd: order.amountUsd,
       amountKhr: order.amountKhr,
       currency: order.currency as PaymentCurrency,
-      method: "KHPAY",
+      method: "BAKONG",
       returnUrl: `${publicUrl}/order?number=${order.orderNumber}`,
       cancelUrl: `${publicUrl}/games/${game.slug}`,
-      callbackUrl: `${publicUrl}/api/payment/webhook/khpay`,
+      callbackUrl: `${publicUrl}/api/payment/webhook/bakong`,
       note: `Ty Khai TopUp · ${game.name} · ${product.name}`,
       customerEmail: data.customerEmail,
       metadata: {

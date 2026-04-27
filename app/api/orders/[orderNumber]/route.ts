@@ -2,7 +2,7 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { fetchKhpayStatus } from "@/lib/payment";
+import { checkBakongPayment } from "@/lib/payment";
 import { updateUserTotalSpent } from "@/lib/auth";
 
 export async function GET(
@@ -21,36 +21,39 @@ export async function GET(
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
-  // Sync payment status from KHPay when webhook isn't reachable (localhost dev).
+  // Sync payment status from payment gateway when webhook isn't reachable (localhost dev).
   // Only poll while the order is still PENDING and we have a transaction id.
   if (order.status === "PENDING" && order.paymentRef && !order.paymentRef.startsWith("SIM-")) {
     try {
-      const remote = await fetchKhpayStatus(order.paymentRef);
-      const isPaid = remote?.paid === true || remote?.status === "paid";
-      if (isPaid) {
-        order = await prisma.order.update({
-          where: { id: order.id },
-          data: { status: "PAID", paidAt: new Date() },
-          include: {
-            game: { select: { name: true, slug: true } },
-            product: { select: { name: true } },
-          },
-        });
-        if (order.userId) {
-          await updateUserTotalSpent(order.userId, order.amountUsd);
+      const remote = await checkBakongPayment(order.paymentRef);
+
+      if (remote) {
+        const isPaid = remote?.paid === true || remote?.status === "paid";
+        if (isPaid) {
+          order = await prisma.order.update({
+            where: { id: order.id },
+            data: { status: "PAID", paidAt: new Date() },
+            include: {
+              game: { select: { name: true, slug: true } },
+              product: { select: { name: true } },
+            },
+          });
+          if (order.userId) {
+            await updateUserTotalSpent(order.userId, order.amountUsd);
+          }
+        } else if (remote?.status === "expired" || remote?.status === "failed") {
+          order = await prisma.order.update({
+            where: { id: order.id },
+            data: {
+              status: remote.status === "expired" ? "CANCELLED" : "FAILED",
+              failureReason: `Payment ${remote.status}`,
+            },
+            include: {
+              game: { select: { name: true, slug: true } },
+              product: { select: { name: true } },
+            },
+          });
         }
-      } else if (remote?.status === "expired" || remote?.status === "failed") {
-        order = await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            status: remote.status === "expired" ? "CANCELLED" : "FAILED",
-            failureReason: `KHPay ${remote.status}`,
-          },
-          include: {
-            game: { select: { name: true, slug: true } },
-            product: { select: { name: true } },
-          },
-        });
       }
     } catch {
       // Silently ignore poll errors â€” we'll retry on the next request.

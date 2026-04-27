@@ -1,6 +1,7 @@
 ﻿import crypto from "crypto";
+import { KHQR } from "bakong-khqr-npm";
 
-export type PaymentMethod = "KHPAY" | "TRUEMONEY" | "WING" | "BANK" | "USDT" | "MANUAL";
+export type PaymentMethod = "BAKONG" | "WALLET" | "TRUEMONEY" | "WING" | "BANK" | "USDT" | "MANUAL";
 export type PaymentCurrency = "USD" | "KHR" | "USDT";
 
 export interface InitiatePaymentArgs {
@@ -25,15 +26,19 @@ export interface PaymentInitResult {
   instructions?: string | null;
 }
 
-const KHPAY_BASE = process.env.KHPAY_BASE_URL || "https://khpay.site/api/v1";
-const KHPAY_KEY = process.env.KHPAY_API_KEY || "";
-const SIM_MODE = process.env.PAYMENT_SIMULATION_MODE === "true" || !KHPAY_KEY;
+const SIM_MODE = process.env.PAYMENT_SIMULATION_MODE === "true";
+
+const BAKONG_ACCOUNT = process.env.BAKONG_ACCOUNT || "";
+const BAKONG_MERCHANT_NAME = process.env.BAKONG_MERCHANT_NAME || "";
+const BAKONG_MERCHANT_CITY = process.env.BAKONG_MERCHANT_CITY || "Phnom Penh";
+const BAKONG_TOKEN = process.env.BAKONG_TOKEN || "";
 
 export async function initiatePayment(
   args: InitiatePaymentArgs
 ): Promise<PaymentInitResult> {
+  if (args.method === "BAKONG" && BAKONG_TOKEN) return initiateBakong(args);
+  
   if (SIM_MODE) return simulatePayment(args);
-  if (args.method === "KHPAY") return initiateKhpay(args);
   if (args.method === "TRUEMONEY") return initiateTrueMoney(args);
   if (args.method === "WING") return initiateWing(args);
   if (args.method === "BANK") return initiateBankTransfer(args);
@@ -47,147 +52,81 @@ function simulatePayment(args: InitiatePaymentArgs): PaymentInitResult {
   return {
     paymentRef: ref,
     redirectUrl: `${base}/api/payment/simulate?order=${args.orderNumber}&ref=${ref}&method=${args.method}`,
-    qrString: "00020101021252040000530384054041.005802KH5912TYKHAI TOPUP6008PHNOMPENH62150111TYKHAITOPUP6304ABCD", // Dummy KHQR
+    qrString: "00020101021252040000530384054041.005802KH5912TYKHAI TOPUP6008PHNOMPENH62150111TYKHAITOPUP6304ABCD",
     expiresAt: new Date(Date.now() + 15 * 60 * 1000),
   };
 }
 
-/**
- * KHPay KHQR integration.
- * Docs: https://khpay.site/api-documentation
- * Endpoint: POST /api/v1/qr/generate
- * Auth: Authorization: Bearer ak_xxx
- */
-async function initiateKhpay(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
-  // KHPay rejects private/internal URLs. Omit them entirely when they point
-  // at localhost — the docs confirm all three URLs are optional. Payment
-  // status is resolved via polling GET /qr/check/{id} instead.
-  const isPublicUrl = (u?: string) =>
-    !!u &&
-    /^https?:\/\//i.test(u) &&
-    !/^https?:\/\/(localhost|127\.|0\.0\.0\.0|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(u);
+async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
+  if (!BAKONG_ACCOUNT || !BAKONG_MERCHANT_NAME || !BAKONG_TOKEN) {
+    throw new Error("Bakong not configured. Check BAKONG_ACCOUNT, BAKONG_MERCHANT_NAME, BAKONG_TOKEN");
+  }
 
   const paymentCurrency = args.currency === "KHR" ? "KHR" : "USD";
-  const rawAmount =
-    paymentCurrency === "KHR"
-      ? args.amountKhr
-      : args.amountUsd;
-  const paymentAmount = Number(rawAmount);
+  const rawAmount = args.currency === "KHR" ? args.amountKhr : args.amountUsd;
+  const amount = Number(rawAmount);
 
-  if (!Number.isFinite(paymentAmount)) {
-    throw new Error(`KHPay: missing valid ${paymentCurrency} amount`);
+  if (!Number.isFinite(amount)) {
+    throw new Error("Bakong: missing valid amount");
   }
 
-  const body: Record<string, unknown> = {
-    amount:
-      paymentCurrency === "KHR"
-        ? String(Math.round(paymentAmount))
-        : paymentAmount.toFixed(2),
+  const khqr = new KHQR(BAKONG_TOKEN, "https://api-bakong.nbc.gov.kh/v1");
+
+  const qrResult = khqr.create_qr({
+    bank_account: BAKONG_ACCOUNT,
+    merchant_name: BAKONG_MERCHANT_NAME.substring(0, 25),
+    merchant_city: BAKONG_MERCHANT_CITY.substring(0, 15),
+    amount: amount,
     currency: paymentCurrency,
-    note: args.note || `Ty Khai TopUp Order ${args.orderNumber}`,
-    metadata: {
-      order_number: args.orderNumber,
-      ...(args.customerEmail ? { email: args.customerEmail } : {}),
-      ...(args.metadata || {}),
-    },
-  };
-  if (isPublicUrl(args.returnUrl)) body.success_url = args.returnUrl;
-  if (isPublicUrl(args.cancelUrl)) body.cancel_url = args.cancelUrl;
-  if (isPublicUrl(args.callbackUrl)) body.callback_url = args.callbackUrl;
-
-  const res = await fetch(`${KHPAY_BASE}/qr/generate`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${KHPAY_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-    cache: "no-store",
+    bill_number: args.orderNumber.substring(0, 25),
+    terminal_label: "TyKhai",
+    static: false,
   });
-
-  const json = await res.json().catch(() => null);
-  if (!res.ok || !json?.success) {
-    const msg =
-      json?.error ||
-      json?.message ||
-      (json ? JSON.stringify(json).slice(0, 300) : `HTTP ${res.status}`);
-    throw new Error(`KHPay: ${msg}`);
+  
+  if (!qrResult) {
+    throw new Error("Bakong: failed to generate QR");
   }
 
-  const data = json.data;
-  if (!data?.qr_string) {
-    throw new Error("KHPay: response did not include qr_string");
-  }
+  const md5Hash = khqr.generate_md5(qrResult);
+
+  const paymentRef = md5Hash;
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  const redirectUrl = `${baseUrl}/checkout/${args.orderNumber}`;
+
   return {
-    paymentRef: data.transaction_id,
-    redirectUrl: data.payment_url || `/checkout/${args.orderNumber}`,
-    qrString: data.qr_string,
-    expiresAt: new Date(Date.now() + (Number(data.expires_in) || 180) * 1000),
+    paymentRef,
+    redirectUrl,
+    qrString: qrResult,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    instructions: `Scan the QR code with Bakong app to pay ${amount} ${args.currency}`,
   };
 }
 
-/**
- * Poll a KHPay transaction status. Fallback to the webhook.
- */
-export async function fetchKhpayStatus(transactionId: string): Promise<{
+export async function checkBakongPayment(md5Hash: string): Promise<{
   status: string;
   paid: boolean;
   amount?: string;
   currency?: string;
 } | null> {
-  if (SIM_MODE || !KHPAY_KEY) return null;
-  const res = await fetch(`${KHPAY_BASE}/qr/check/${transactionId}`, {
-    headers: { "Authorization": `Bearer ${KHPAY_KEY}` },
-    cache: "no-store",
-  });
-  const json = await res.json().catch(() => null);
-  if (!res.ok || !json?.success) {
-    console.warn(`[khpay] check ${transactionId} failed:`, res.status, json);
+  if (!BAKONG_TOKEN) {
     return null;
   }
-  console.log(`[khpay] check ${transactionId}:`, JSON.stringify(json.data));
-  return {
-    status: String(json.data.status || "pending"),
-    paid: Boolean(json.data.paid),
-    amount: json.data.amount,
-    currency: json.data.currency,
-  };
-}
 
-/**
- * Verify a KHPay webhook signature.
- * Header: X-Webhook-Signature: sha256=<hex>
- */
-export function verifyWebhook(
-  _method: PaymentMethod,
-  rawBody: string,
-  headers: Record<string, string>
-): boolean {
-  if (SIM_MODE) return true;
+  const khqr = new KHQR(BAKONG_TOKEN, "https://api-bakong.nbc.gov.kh/v1");
 
-  const secret = process.env.KHPAY_WEBHOOK_SECRET;
-  if (!secret) {
-    console.warn("[webhook] KHPAY_WEBHOOK_SECRET not set â€” rejecting.");
-    return false;
+  try {
+    const result = await khqr.check_payment(md5Hash);
+    return {
+      status: result as string || "UNPAID",
+      paid: result === "PAID",
+    };
+  } catch (e) {
+    console.warn("[bakong] check_payment failed:", e);
+    return null;
   }
-
-  const received = headers["x-webhook-signature"] || "";
-  if (!received.startsWith("sha256=")) return false;
-
-  const expected =
-    "sha256=" + crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
-
-  const a = Buffer.from(received);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
 }
 
-/**
- * TrueMoney wallet payment - returns payment instructions
- */
 async function initiateTrueMoney(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
-  const truemailBase = process.env.TRUEMONEY_BASE_URL || "https://api.truemoney-cambodia.com";
   const phone = process.env.TRUEMONEY_PHONE;
   
   if (!phone) {
@@ -204,9 +143,6 @@ async function initiateTrueMoney(args: InitiatePaymentArgs): Promise<PaymentInit
   };
 }
 
-/**
- * Wing wallet payment
- */
 async function initiateWing(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
   const wingMsisdn = process.env.WING_MSISDN;
   
@@ -223,9 +159,6 @@ async function initiateWing(args: InitiatePaymentArgs): Promise<PaymentInitResul
   };
 }
 
-/**
- * Bank transfer - returns bank details
- */
 async function initiateBankTransfer(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
   const bankName = process.env.BANK_NAME || "ABA Bank";
   const bankAccount = process.env.BANK_ACCOUNT || "123456789";
@@ -241,9 +174,6 @@ async function initiateBankTransfer(args: InitiatePaymentArgs): Promise<PaymentI
   };
 }
 
-/**
- * USDT crypto payment
- */
 async function initiateUsdt(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
   const usdtWallet = process.env.USDT_WALLET;
   
@@ -262,4 +192,3 @@ async function initiateUsdt(args: InitiatePaymentArgs): Promise<PaymentInitResul
     instructions: `Send exactly ${amountUsd} USDT (TRC20) to ${usdtWallet}. Reference: ${ref}`,
   };
 }
-

@@ -12,7 +12,7 @@ const bulkItemSchema = z.object({
 
 const bulkOrderSchema = z.object({
   items: z.array(bulkItemSchema).min(1).max(50),
-  paymentMethod: z.enum(["KHPAY", "WALLET"]),
+  paymentMethod: z.enum(["WALLET", "BAKONG"]),
   currency: z.enum(["USD", "KHR"]).optional().default("USD"),
   promoCode: z.string().optional(),
 });
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
       amountUsd: finalTotal,
       amountKhr: settings.exchangeRate ? Math.round(finalTotal * settings.exchangeRate) : null,
       currency: parsed.data.currency,
-      paymentMethod: "KHPAY",
+      paymentMethod: "BAKONG",
       status: "PENDING",
       userId: session.userId,
     }

@@ -5,7 +5,6 @@ import { z } from "zod";
 
 const topupSchema = z.object({
   amountUsd: z.number().min(1).max(500),
-  paymentMethod: z.enum(["KHPAY"]),
 });
 
 export async function GET() {
@@ -48,7 +47,7 @@ export async function POST(req: NextRequest) {
       amountUsd: parsed.data.amountUsd,
       amountKhr: settings.exchangeRate ? Math.round(parsed.data.amountUsd * settings.exchangeRate) : null,
       currency: "USD",
-      paymentMethod: parsed.data.paymentMethod,
+      paymentMethod: "BAKONG",
       status: "PENDING",
       userId: session.userId,
     }
