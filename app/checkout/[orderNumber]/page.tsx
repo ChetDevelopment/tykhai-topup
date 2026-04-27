@@ -119,11 +119,13 @@ export default function CheckoutPage() {
       const data = await res.json();
       setOrder(data);
 
-      // AUTO-POPUP LOGIC
-      if (PAID_STATES.has(data.status) && !hasAutoOpened) {
+      // Show popup immediately when status changes to DELIVERED/PAID
+      const prevStatus = order?.status;
+      const newStatus = data.status;
+      if (newStatus === "DELIVERED" || newStatus === "PAID") {
         setShowReceipt(true);
         setHasAutoOpened(true);
-        alert("PAYMENT SUCCESSFUL! Your order has been delivered.");
+        alert("PAYMENT SUCCESSFUL!\n\nYour order has been delivered. Check your game account now.");
       }
       
       return data;
