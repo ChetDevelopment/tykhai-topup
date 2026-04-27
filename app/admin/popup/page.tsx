@@ -124,7 +124,7 @@ export default function AdminPopupPage() {
                   />
                   <button
                     type="button"
-                    onClick={() => setForm({ ...f: any => ({ ...f, popupImageUrl: null }))}
+                    onClick={() => setForm((f: any) => ({ ...f, popupImageUrl: null }))}
                     className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     <X className="h-3 w-3" />
