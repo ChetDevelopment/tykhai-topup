@@ -115,7 +115,9 @@ export async function checkBakongPayment(md5Hash: string): Promise<{
   const khqr = new KHQR(BAKONG_TOKEN, "https://api-bakong.nbc.gov.kh/v1");
 
   try {
+    console.log("[bakong] check_payment:", md5Hash);
     const result = await khqr.check_payment(md5Hash);
+    console.log("[bakong] check_payment result:", result, "type:", typeof result);
     return {
       status: result as string || "UNPAID",
       paid: result === "PAID",
