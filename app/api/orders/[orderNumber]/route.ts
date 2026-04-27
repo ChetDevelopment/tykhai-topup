@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { checkBakongPayment } from "@/lib/payment";
 import { updateUserTotalSpent } from "@/lib/auth";
+import { sendOrderReceipt } from "@/lib/email";
 
 export async function GET(
   _req: NextRequest,
@@ -42,6 +43,21 @@ export async function GET(
           if (order.userId) {
             await updateUserTotalSpent(order.userId, order.amountUsd);
           }
+          if (order.customerEmail) {
+            await sendOrderReceipt({
+              orderNumber: order.orderNumber,
+              gameName: order.game.name,
+              productName: order.product.name,
+              playerUid: order.playerUid,
+              amountUsd: order.amountUsd,
+              amountKhr: order.amountKhr,
+              currency: order.currency,
+              paidAt: order.paidAt,
+              deliveredAt: order.deliveredAt,
+              status: order.status,
+              customerEmail: order.customerEmail,
+            });
+          }
         } else if (remote?.status === "expired" || remote?.status === "failed") {
           order = await prisma.order.update({
             where: { id: order.id },
@@ -70,6 +86,24 @@ export async function GET(
               product: { select: { name: true } },
             },
           });
+          if (order.userId) {
+            await updateUserTotalSpent(order.userId, order.amountUsd);
+          }
+          if (order.customerEmail) {
+            await sendOrderReceipt({
+              orderNumber: order.orderNumber,
+              gameName: order.game.name,
+              productName: order.product.name,
+              playerUid: order.playerUid,
+              amountUsd: order.amountUsd,
+              amountKhr: order.amountKhr,
+              currency: order.currency,
+              paidAt: order.paidAt,
+              deliveredAt: order.deliveredAt,
+              status: order.status,
+              customerEmail: order.customerEmail,
+            });
+          }
         }
       }
     } catch {
