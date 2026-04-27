@@ -86,7 +86,11 @@ export default function AdminOrderDetailPage() {
     const res = await fetch(`/api/admin/orders/${params.orderNumber}/refresh`, { method: "POST" });
     if (res.ok) {
       const data = await res.json();
-      alert(`KHPay says: ${data.remote?.status ?? "unknown"}${data.updated ? " — order updated" : ""}`);
+      const msg = `Status: ${data.remote?.status ?? "unknown"}` +
+        (data.expectedAmount ? ` | Expected: $${data.expectedAmount}` : "") +
+        (data.paidAmount ? ` | Paid: $${data.paidAmount}` : "") +
+        (data.updated ? " — Order UPDATED!" : "");
+      alert(msg);
       await load();
     } else {
       const d = await res.json().catch(() => null);

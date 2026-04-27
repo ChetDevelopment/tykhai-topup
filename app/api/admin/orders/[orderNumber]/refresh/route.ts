@@ -61,8 +61,13 @@ export async function POST(
     action: "order.bakong_refresh",
     targetType: "order",
     targetId: order.id,
-    details: { paymentRef: order.paymentRef, remote },
+    details: { paymentRef: order.paymentRef, remote, expectedAmount: order.amountUsd },
   });
 
-  return NextResponse.json({ remote, order: updated });
+  return NextResponse.json({ 
+    remote, 
+    order: updated,
+    expectedAmount: order.amountUsd,
+    paidAmount: remote?.amount,
+  });
 }
