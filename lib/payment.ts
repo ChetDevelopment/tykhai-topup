@@ -77,10 +77,10 @@ async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitRes
     merchant_name: BAKONG_MERCHANT_NAME.substring(0, 25),
     merchant_city: BAKONG_MERCHANT_CITY.substring(0, 15),
     amount: amount,
-    currency: "KHR",
+    currency: paymentCurrency,
     bill_number: args.orderNumber.substring(0, 25),
     terminal_label: "TyKhai",
-    static: false,
+    static: true,
   });
   
   if (!qrResult) {
