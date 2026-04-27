@@ -294,11 +294,10 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
                 const currentPrice = hasSale ? p.salePriceUsd! : p.priceUsd;
 
                 return (
-                  <button
-                    type="button"
+                  <div
                     key={p.id}
                     onClick={() => setSelected(p.id)}
-                    className={`group relative overflow-hidden text-left rounded-lg border p-2.5 transition-all duration-300 hover:-translate-y-0.5 flex flex-col items-center justify-center text-center ${
+                    className={`group relative overflow-hidden text-left rounded-lg border p-2.5 transition-all duration-300 hover:-translate-y-0.5 flex flex-col items-center justify-center text-center cursor-pointer ${
                       isSelected
                         ? "border-royal-primary bg-royal-primary/10 shadow-lg shadow-royal-primary/20 ring-1 ring-royal-primary/30"
                         : "border-royal-border bg-royal-card hover:border-royal-primary/30"
@@ -368,7 +367,7 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
                       )}
                       {format(currentPrice)}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
