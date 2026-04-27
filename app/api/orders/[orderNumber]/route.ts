@@ -32,7 +32,7 @@ export async function GET(
         if (isPaid) {
           order = await prisma.order.update({
             where: { id: order.id },
-            data: { status: "PAID", paidAt: new Date() },
+            data: { status: "DELIVERED", paidAt: new Date(), deliveredAt: new Date() },
             include: {
               game: { select: { name: true, slug: true } },
               product: { select: { name: true } },

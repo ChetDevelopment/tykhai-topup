@@ -36,8 +36,9 @@ export async function POST(req: NextRequest) {
     await prisma.order.update({
       where: { id: order.id },
       data: {
-        status: "PAID",
+        status: "DELIVERED",
         paidAt: new Date(),
+        deliveredAt: new Date(),
       },
     });
 
