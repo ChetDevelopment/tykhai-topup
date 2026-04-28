@@ -1,16 +1,25 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { rateLimit, RATE_LIMITS, checkIPBlock } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  try {
-    const user = await getCurrentUser();
+const userRateLimit = rateLimit(RATE_LIMITS.USER_API);
+const ipCheck = checkIPBlock;
 
-    if (!user) {
-      return NextResponse.json({ user: null });
-    }
+export async function GET(req: NextRequest) {
+  // Check IP block first
+  const ipBlocked = ipCheck(req);
+  if (ipBlocked) return ipBlocked;
+
+  // Apply rate limiting
+  const rateLimited = await userRateLimit(req);
+  if (rateLimited) return rateLimited;
+
+  try {
+    // Require authentication
+    const user = await requireUser();
 
     const [boughtOrders, savedUids, recentOrders, wishlist, userData] = await Promise.all([
       prisma.order.findMany({

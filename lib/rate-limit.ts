@@ -8,8 +8,17 @@ interface RateLimitStore {
 }
 
 const store: RateLimitStore = {};
-const WINDOW_MS = 60 * 1000; // 1 minute
-const MAX_REQUESTS = 60; // per window
+
+// Rate limit configurations by endpoint type
+export const RATE_LIMITS = {
+  LOGIN: { windowMs: 60 * 1000, maxRequests: 5 },
+  REGISTER: { windowMs: 60 * 1000, maxRequests: 3 },
+  ORDERS: { windowMs: 60 * 1000, maxRequests: 10 },
+  PUBLIC_API: { windowMs: 60 * 1000, maxRequests: 60 },
+  ADMIN_API: { windowMs: 60 * 1000, maxRequests: 30 },
+  USER_API: { windowMs: 60 * 1000, maxRequests: 30 },
+  WEBHOOK: { windowMs: 60 * 1000, maxRequests: 100 },
+};
 
 export interface RateLimitConfig {
   windowMs?: number;
@@ -19,8 +28,8 @@ export interface RateLimitConfig {
 
 export function rateLimit(config: RateLimitConfig = {}) {
   const {
-    windowMs = WINDOW_MS,
-    maxRequests = MAX_REQUESTS,
+    windowMs = 60 * 1000,
+    maxRequests = 60,
     keyGenerator = (req) => {
       const forwarded = req.headers.get("x-forwarded-for");
       const ip = forwarded ? forwarded.split(",")[0].trim() : "unknown";
@@ -58,6 +67,28 @@ export function rateLimit(config: RateLimitConfig = {}) {
   };
 }
 
+// Block IP temporarily after too many violations
+const blockedIPs: Map<string, number> = new Map();
+const BLOCK_DURATION = 15 * 60 * 1000; // 15 minutes
+
+export function checkIPBlock(req: NextRequest): NextResponse | null {
+  const forwarded = req.headers.get("x-forwarded-for");
+  const ip = forwarded ? forwarded.split(",")[0].trim() : "unknown";
+  
+  const blockedUntil = blockedIPs.get(ip);
+  if (blockedUntil && blockedUntil > Date.now()) {
+    return NextResponse.json(
+      { error: "IP temporarily blocked due to suspicious activity" },
+      { status: 403 }
+    );
+  }
+  return null;
+}
+
+export function blockIP(ip: string) {
+  blockedIPs.set(ip, Date.now() + BLOCK_DURATION);
+}
+
 // Cleanup old entries periodically
 setInterval(() => {
   const now = Date.now();
@@ -66,4 +97,8 @@ setInterval(() => {
       delete store[key];
     }
   });
-}, WINDOW_MS);
+  // Cleanup expired blocks
+  for (const [ip, until] of blockedIPs.entries()) {
+    if (until < now) blockedIPs.delete(ip);
+  }
+}, 60 * 1000);

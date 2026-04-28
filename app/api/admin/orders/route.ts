@@ -2,8 +2,23 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/auth";
+import { rateLimit, RATE_LIMITS, checkIPBlock } from "@/lib/rate-limit";
+
+const adminRateLimit = rateLimit(RATE_LIMITS.ADMIN_API);
 
 export async function GET(req: NextRequest) {
+  // Check IP block
+  const ipBlocked = checkIPBlock(req);
+  if (ipBlocked) return ipBlocked;
+
+  // Rate limiting
+  const rateLimited = await adminRateLimit(req);
+  if (rateLimited) return rateLimited;
+
+  // Require admin auth
+  await requireAdmin();
+
   const { searchParams } = req.nextUrl;
   const status = searchParams.get("status") || undefined;
   const q = searchParams.get("q")?.trim();

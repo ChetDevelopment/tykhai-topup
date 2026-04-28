@@ -263,4 +263,18 @@ export async function requireAdmin(): Promise<AdminSession> {
   return admin;
 }
 
+export async function requireUser(): Promise<UserSession> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("UNAUTHORIZED");
+  return user;
+}
+
+// Session timeout check (15 minutes for admin)
+export function checkSessionTimeout(lastActivity: Date | null, timeoutMinutes: number = 15): boolean {
+  if (!lastActivity) return false;
+  const now = Date.now();
+  const last = new Date(lastActivity).getTime();
+  return (now - last) > (timeoutMinutes * 60 * 1000);
+}
+
 export { ADMIN_COOKIE, USER_COOKIE };

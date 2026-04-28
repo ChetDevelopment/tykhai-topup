@@ -3,20 +3,46 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkBakongPayment } from "@/lib/payment";
-import { updateUserTotalSpent } from "@/lib/auth";
+import { updateUserTotalSpent, requireUser } from "@/lib/auth";
 import { sendOrderReceipt } from "@/lib/email";
+import { rateLimit, RATE_LIMITS, checkIPBlock } from "@/lib/rate-limit";
+import { decryptField } from "@/lib/encryption";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { orderNumber: string } }
 ) {
-  let order = await prisma.order.findUnique({
-    where: { orderNumber: params.orderNumber.toUpperCase() },
-    include: {
-      game: { select: { name: true, slug: true } },
-      product: { select: { name: true } },
-    },
-  });
+  // Check IP block first
+  const ipBlocked = checkIPBlock(req);
+  if (ipBlocked) return ipBlocked;
+
+  // Apply rate limiting
+  const rateLimited = await rateLimit(RATE_LIMITS.ORDERS)(req);
+  if (rateLimited) return rateLimited;
+
+  try {
+    // Require authentication
+    const user = await requireUser();
+
+    let order = await prisma.order.findUnique({
+      where: { orderNumber: params.orderNumber.toUpperCase() },
+      include: {
+        game: { select: { name: true, slug: true } },
+        product: { select: { name: true } },
+      },
+    });
+
+    // IDOR Protection: Verify resource ownership
+    if (order && order.userId && order.userId !== user.userId) {
+      // Check if user is admin
+      if (user.role !== "ADMIN" && user.role !== "SUPERADMIN") {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    }
+
+    if (!order) {
+      return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
 
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
