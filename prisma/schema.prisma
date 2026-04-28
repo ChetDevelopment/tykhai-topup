@@ -157,8 +157,8 @@ model Settings {
   popupTitle       String?
   popupContent     String?
   popupImageUrl     String?
-  telegramBotToken String?
-  telegramChatId   String?
+  telegramBotToken String?  // Encrypt with encryptField()
+  telegramChatId   String?  // Encrypt with encryptField()
   updatedAt   DateTime @updatedAt
 }
 
@@ -227,10 +227,10 @@ model BlockedIdentity {
 
 model User {
   id            String    @id @default(cuid())
-  email         String    @unique
+  email         String    @unique // Encrypt with encryptField() before save
   emailVerified DateTime?
   passwordHash  String?
-  name          String?
+  name          String?  // Consider encrypt
   image         String?
   role          String      @default("USER") // USER | RESELLER | RESELLER_PENDING | SUB_RESELLER
   pointsBalance Int       @default(0)

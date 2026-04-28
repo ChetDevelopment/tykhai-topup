@@ -23,6 +23,7 @@ export interface PaymentInitResult {
   paymentRef: string;
   redirectUrl: string;
   qrString?: string | null;
+  qrStringEnc?: string | null;
   expiresAt: Date;
   instructions?: string | null;
 }

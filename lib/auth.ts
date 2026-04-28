@@ -6,6 +6,7 @@ import { getServerSession, NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { getRank } from "./vip";
+import { decryptField, encryptField } from "./encryption";
 
 const ADMIN_COOKIE = "tykhai_admin";
 const USER_COOKIE = "tykhai_user";
@@ -95,25 +96,45 @@ export async function verifyAdminSession(token: string): Promise<AdminSession | 
 }
 
 export async function getCurrentAdmin(): Promise<AdminSession | null> {
-  const token = cookies().get(ADMIN_COOKIE)?.value;
+  const cookieStore = await cookies();
+  const token = cookieStore.get(ADMIN_COOKIE)?.value;
   if (!token) return null;
   return await verifyAdminSession(token);
 }
 
 export async function verifyAdminCredentials(email: string, password: string) {
-  const admin = await prisma.admin.findUnique({ where: { email } });
+  // Email lookup - try both encrypted and plaintext for migration
+  let admin = await prisma.admin.findUnique({ where: { email } });
+  
+  if (!admin) {
+    const encryptedEmail = encryptField(email);
+    if (encryptedEmail) {
+      admin = await prisma.admin.findFirst({ 
+        where: { email: encryptedEmail } 
+      });
+    }
+  }
+  
   if (!admin || !admin.active) return null;
+  
   const ok = await bcrypt.compare(password, admin.passwordHash);
   if (!ok) return null;
+  
   await prisma.admin.update({
     where: { id: admin.id },
     data: { lastLoginAt: new Date() },
   });
-  return { adminId: admin.id, email: admin.email, role: admin.role };
+  
+  return { 
+    adminId: admin.id, 
+    email: decryptField(admin.email) || admin.email, 
+    role: admin.role 
+  };
 }
 
 export async function setAdminSessionCookie(token: string) {
-  cookies().set(ADMIN_COOKIE, token, {
+  const cookieStore = await cookies();
+  cookieStore.set(ADMIN_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -122,7 +143,8 @@ export async function setAdminSessionCookie(token: string) {
 }
 
 export async function clearAdminSessionCookie() {
-  cookies().delete(ADMIN_COOKIE);
+  const cookieStore = await cookies();
+  cookieStore.delete(ADMIN_COOKIE);
 }
 
 // --- User Auth ---
@@ -155,7 +177,8 @@ export async function getCurrentUser(): Promise<UserSession | null> {
   let email: string | null = null;
 
   // 1. Try Manual JWT Cookie
-  const manualToken = cookies().get(USER_COOKIE)?.value;
+  const cookieStore = await cookies();
+  const manualToken = cookieStore.get(USER_COOKIE)?.value;
   if (manualToken) {
     const session = await verifyUserSession(manualToken);
     if (session) {
@@ -200,10 +223,21 @@ export async function getCurrentUser(): Promise<UserSession | null> {
 }
 
 export async function verifyUserCredentials(email: string, password: string) {
-  const user = await prisma.user.findUnique({ 
+  // Try plaintext first, then encrypted
+  let user = await prisma.user.findUnique({ 
     where: { email },
     include: { accounts: true }
   });
+
+  if (!user) {
+    const encryptedEmail = encryptField(email);
+    if (encryptedEmail) {
+      user = await prisma.user.findFirst({ 
+        where: { email: encryptedEmail },
+        include: { accounts: true }
+      });
+    }
+  }
 
   if (!user) return null;
 
@@ -219,7 +253,7 @@ export async function verifyUserCredentials(email: string, password: string) {
 
   return {
     userId: user.id,
-    email: user.email,
+    email: decryptField(user.email) || user.email,
     name: user.name ?? undefined,
     role: user.role,
     vipRank: user.vipRank,
@@ -229,7 +263,8 @@ export async function verifyUserCredentials(email: string, password: string) {
 }
 
 export async function setUserSessionCookie(token: string) {
-  cookies().set(USER_COOKIE, token, {
+  const cookieStore = await cookies();
+  cookieStore.set(USER_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -239,7 +274,8 @@ export async function setUserSessionCookie(token: string) {
 }
 
 export async function clearUserSessionCookie() {
-  cookies().delete(USER_COOKIE);
+  const cookieStore = await cookies();
+  cookieStore.delete(USER_COOKIE);
 }
 
 export async function updateUserTotalSpent(userId: string, amountUsd: number) {

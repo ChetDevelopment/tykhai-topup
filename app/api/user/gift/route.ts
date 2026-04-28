@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { guardUserApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -12,10 +12,8 @@ const giftSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await getCurrentUser();
-  if (!session) {
-    return NextResponse.json({ error: "Please login to send gifts" }, { status: 401 });
-  }
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
   const body = await req.json().catch(() => ({}));
   const parsed = giftSchema.safeParse(body);
@@ -33,7 +31,7 @@ export async function POST(req: NextRequest) {
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: session.userId },
+    where: { id: security.user.userId },
   });
 
   if (!user || user.walletBalance < product.priceUsd) {
@@ -49,12 +47,12 @@ export async function POST(req: NextRequest) {
   }
 
   await prisma.user.update({
-    where: { id: session.userId },
-    data: { walletBalance: { decrement: product.priceUsd } }
+    where: { id: security.user.userId },
+    data: { walletBalance: { decrement: product.priceUsd } },
   });
 
   const orderNumber = `GIFT-${Date.now().toString(36).toUpperCase()}`;
-  const order = await prisma.order.create({
+  await prisma.order.create({
     data: {
       orderNumber,
       gameId: game.id,
@@ -66,8 +64,8 @@ export async function POST(req: NextRequest) {
       currency: "USD",
       paymentMethod: "WALLET",
       status: "PENDING",
-      userId: session.userId,
-    }
+      userId: security.user.userId,
+    },
   });
 
   return NextResponse.json({

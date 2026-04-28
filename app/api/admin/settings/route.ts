@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { guardAdminApi } from "@/lib/api-security";
+import { decryptField, encryptField } from "@/lib/encryption";
 import { z } from "zod";
 
 const settingsSchema = z.object({
@@ -21,26 +23,59 @@ const settingsSchema = z.object({
   telegramChatId: z.string().nullable().optional(),
 });
 
-export async function GET() {
+function readSecret(value: string | null | undefined) {
+  return decryptField(value) ?? value ?? null;
+}
+
+function serializeSettings<T extends { telegramBotToken?: string | null; telegramChatId?: string | null }>(
+  settings: T
+) {
+  return {
+    ...settings,
+    telegramBotToken: readSecret(settings.telegramBotToken),
+    telegramChatId: readSecret(settings.telegramChatId),
+  };
+}
+
+export async function GET(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const settings = await prisma.settings.upsert({
     where: { id: 1 },
     update: {},
     create: { id: 1 },
   });
-  return NextResponse.json(settings);
+
+  return NextResponse.json(serializeSettings(settings));
 }
 
 export async function PATCH(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const body = await req.json().catch(() => ({}));
   const parsed = settingsSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid" }, { status: 400 });
   }
+
+  const updateData = {
+    ...parsed.data,
+    ...("telegramBotToken" in parsed.data
+      ? { telegramBotToken: encryptField(parsed.data.telegramBotToken) }
+      : {}),
+    ...("telegramChatId" in parsed.data
+      ? { telegramChatId: encryptField(parsed.data.telegramChatId) }
+      : {}),
+  };
+
   const settings = await prisma.settings.upsert({
     where: { id: 1 },
-    update: parsed.data,
-    create: { id: 1, ...parsed.data },
+    update: updateData,
+    create: { id: 1, ...updateData },
   });
-  return NextResponse.json(settings);
+
+  return NextResponse.json(serializeSettings(settings));
 }
 

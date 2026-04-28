@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 const createSchema = z.object({
-  code: z.string().min(2).max(30).transform((v) => v.toUpperCase().trim()),
+  code: z.string().min(2).max(30).transform((value) => value.toUpperCase().trim()),
   discountType: z.enum(["PERCENT", "FIXED"]),
   discountValue: z.number().positive(),
   minOrderUsd: z.number().min(0).default(0),
@@ -14,7 +15,10 @@ const createSchema = z.object({
   active: z.boolean().default(true),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const codes = await prisma.promoCode.findMany({
     orderBy: { createdAt: "desc" },
   });
@@ -22,6 +26,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   try {
     const body = await req.json();
     const parsed = createSchema.safeParse(body);
@@ -31,8 +38,8 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    const data = parsed.data;
 
+    const data = parsed.data;
     const existing = await prisma.promoCode.findUnique({ where: { code: data.code } });
     if (existing) {
       return NextResponse.json({ error: "Code already exists" }, { status: 409 });
@@ -55,4 +62,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
-

@@ -1,75 +1,64 @@
-﻿import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkBakongPayment } from "@/lib/payment";
-import { updateUserTotalSpent, requireUser } from "@/lib/auth";
+import { updateUserTotalSpent } from "@/lib/auth";
 import { sendOrderReceipt } from "@/lib/email";
-import { rateLimit, RATE_LIMITS, checkIPBlock } from "@/lib/rate-limit";
 import { decryptField } from "@/lib/encryption";
+import { guardUserApi, ordersApiRateLimit } from "@/lib/api-security";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { orderNumber: string } }
 ) {
-  // Check IP block first
-  const ipBlocked = checkIPBlock(req);
-  if (ipBlocked) return ipBlocked;
+  const security = await guardUserApi(req, ordersApiRateLimit);
+  if ("response" in security) return security.response;
 
-  // Apply rate limiting
-  const rateLimited = await rateLimit(RATE_LIMITS.ORDERS)(req);
-  if (rateLimited) return rateLimited;
-
-  try {
-    // Require authentication
-    const user = await requireUser();
-
-    let order = await prisma.order.findUnique({
-      where: { orderNumber: params.orderNumber.toUpperCase() },
-      include: {
-        game: { select: { name: true, slug: true } },
-        product: { select: { name: true } },
-      },
-    });
-
-    // IDOR Protection: Verify resource ownership
-    if (order && order.userId && order.userId !== user.userId) {
-      // Check if user is admin
-      if (user.role !== "ADMIN" && user.role !== "SUPERADMIN") {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
-    }
-
-    if (!order) {
-      return NextResponse.json({ error: "Order not found" }, { status: 404 });
-    }
+  let order = await prisma.order.findUnique({
+    where: { orderNumber: params.orderNumber.toUpperCase() },
+    include: {
+      game: { select: { name: true, slug: true } },
+      product: { select: { name: true } },
+    },
+  });
 
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
+  if (!order.userId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (order.userId !== security.user.userId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-  // Sync payment status from payment gateway when webhook isn't reachable (localhost dev).
-  // Only poll while the order is still PENDING and we have a transaction id.
   if (order.status === "PENDING" && order.paymentRef && !order.paymentRef.startsWith("SIM-")) {
     try {
       const remote = await checkBakongPayment(order.paymentRef);
-      console.log("[order] checkBakongPayment:", order.paymentRef, "→", remote);
 
       if (remote) {
-        const isPaid = remote?.paid === true || remote?.status === "paid";
+        const isPaid = remote.paid === true || remote.status === "paid";
         if (isPaid) {
           order = await prisma.order.update({
             where: { id: order.id },
-            data: { status: "DELIVERED", paidAt: new Date(), deliveredAt: new Date() },
+            data: {
+              status: "DELIVERED",
+              paidAt: new Date(),
+              deliveredAt: new Date(),
+            },
             include: {
               game: { select: { name: true, slug: true } },
               product: { select: { name: true } },
             },
           });
+
           if (order.userId) {
             await updateUserTotalSpent(order.userId, order.amountUsd);
           }
-          if (order.customerEmail) {
+
+          const customerEmail = decryptField(order.customerEmail) ?? order.customerEmail;
+          if (customerEmail) {
             await sendOrderReceipt({
               orderNumber: order.orderNumber,
               gameName: order.game.name,
@@ -81,10 +70,10 @@ export async function GET(
               paidAt: order.paidAt,
               deliveredAt: order.deliveredAt,
               status: order.status,
-              customerEmail: order.customerEmail,
+              customerEmail,
             });
           }
-        } else if (remote?.status === "expired" || remote?.status === "failed") {
+        } else if (remote.status === "expired" || remote.status === "failed") {
           order = await prisma.order.update({
             where: { id: order.id },
             data: {
@@ -98,24 +87,29 @@ export async function GET(
           });
         }
       }
-      
-      // For static QR - trust payment after 30 seconds if still PENDING
-      // (Static QR doesn't report PAID status via API, so we trust user)
+
       if (order.status === "PENDING") {
         const timeSinceCreated = Date.now() - new Date(order.createdAt).getTime();
         if (timeSinceCreated > 30000) {
           order = await prisma.order.update({
             where: { id: order.id },
-            data: { status: "DELIVERED", paidAt: new Date(), deliveredAt: new Date() },
+            data: {
+              status: "DELIVERED",
+              paidAt: new Date(),
+              deliveredAt: new Date(),
+            },
             include: {
               game: { select: { name: true, slug: true } },
               product: { select: { name: true } },
             },
           });
+
           if (order.userId) {
             await updateUserTotalSpent(order.userId, order.amountUsd);
           }
-          if (order.customerEmail) {
+
+          const customerEmail = decryptField(order.customerEmail) ?? order.customerEmail;
+          if (customerEmail) {
             await sendOrderReceipt({
               orderNumber: order.orderNumber,
               gameName: order.game.name,
@@ -127,13 +121,13 @@ export async function GET(
               paidAt: order.paidAt,
               deliveredAt: order.deliveredAt,
               status: order.status,
-              customerEmail: order.customerEmail,
+              customerEmail,
             });
           }
         }
       }
     } catch {
-      // Silently ignore poll errors â€” we'll retry on the next request.
+      // Ignore polling errors and retry on a later request.
     }
   }
 

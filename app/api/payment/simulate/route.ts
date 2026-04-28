@@ -4,9 +4,20 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { updateUserTotalSpent } from "@/lib/auth";
 
-// Simulation: pretends payment succeeded and marks order PAID, then DELIVERED.
-// Only active when PAYMENT_SIMULATION_MODE=true or no real credentials set.
-export async function GET(req: NextRequest) {
+async function simulatePayment(req: NextRequest) {
+  // Completely disable in production
+  if (process.env.NODE_ENV === "production") {
+    return new NextResponse('Not Found', { status: 404 });
+  }
+
+  // Also check if explicitly disabled
+  if (process.env.ENABLE_PAYMENT_SIMULATION !== "true") {
+    return NextResponse.json(
+      { error: "Payment simulation is disabled" },
+      { status: 403 }
+    );
+  }
+
   const orderNumber = req.nextUrl.searchParams.get("order");
   const ref = req.nextUrl.searchParams.get("ref");
 
@@ -17,7 +28,6 @@ export async function GET(req: NextRequest) {
   const order = await prisma.order.findUnique({ where: { orderNumber } });
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
-  // Mark as paid
   if (order.status === "PENDING") {
     await prisma.order.update({
       where: { id: order.id },
@@ -32,8 +42,6 @@ export async function GET(req: NextRequest) {
       await updateUserTotalSpent(order.userId, order.amountUsd);
     }
 
-    // In real life you'd trigger fulfillment here (queue job).
-    // For simulation, mark DELIVERED right away:
     setTimeout(async () => {
       await prisma.order.update({
         where: { id: order.id },
@@ -42,12 +50,11 @@ export async function GET(req: NextRequest) {
     }, 100);
   }
 
-  // Render a simple "payment complete" page that redirects to order tracker.
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
   const html = `<!doctype html>
 <html>
 <head>
-<title>Payment Simulated — Ty Khai TopUp</title>
+<title>Payment Simulated - Ty Khai TopUp</title>
 <meta http-equiv="refresh" content="3;url=${baseUrl}/order?number=${orderNumber}">
 <style>
   body { font-family: system-ui; background: #0A0A0F; color: #F5F5F7; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
@@ -60,12 +67,12 @@ export async function GET(req: NextRequest) {
 </head>
 <body>
   <div class="box">
-    <div class="check">✅</div>
+    <div class="check">OK</div>
     <h1>Payment Simulated</h1>
     <p>Order <code>${orderNumber}</code> is being processed.</p>
-    <p style="color:#8B8B9E;font-size:0.875rem">Simulation mode is active — in production this would be your real ABA Pay or Binance Pay confirmation.</p>
+    <p style="color:#8B8B9E;font-size:0.875rem">Simulation mode is active. In production this endpoint is disabled.</p>
     <p>Redirecting to order tracker in 3s...</p>
-    <p><a href="${baseUrl}/order?number=${orderNumber}">Continue now →</a></p>
+    <p><a href="${baseUrl}/order?number=${orderNumber}">Continue now</a></p>
   </div>
 </body>
 </html>`;
@@ -75,3 +82,10 @@ export async function GET(req: NextRequest) {
   });
 }
 
+export async function GET(req: NextRequest) {
+  return simulatePayment(req);
+}
+
+export async function POST(req: NextRequest) {
+  return simulatePayment(req);
+}

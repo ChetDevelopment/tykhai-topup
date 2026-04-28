@@ -1,12 +1,9 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
-import { rateLimit, RATE_LIMITS, checkIPBlock } from "@/lib/rate-limit";
 import { z } from "zod";
-
-const adminRateLimit = rateLimit(RATE_LIMITS.ADMIN_API);
 
 const productSchema = z.object({
   gameId: z.string().min(1),
@@ -23,16 +20,8 @@ const productSchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  // Check IP block
-  const ipBlocked = checkIPBlock(req);
-  if (ipBlocked) return ipBlocked;
-
-  // Rate limiting
-  const rateLimited = await adminRateLimit(req);
-  if (rateLimited) return rateLimited;
-
-  // Require admin auth
-  await requireAdmin();
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
 
   const gameId = req.nextUrl.searchParams.get("gameId");
   const products = await prisma.product.findMany({
@@ -44,16 +33,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  // Check IP block
-  const ipBlocked = checkIPBlock(req);
-  if (ipBlocked) return ipBlocked;
-
-  // Rate limiting
-  const rateLimited = await adminRateLimit(req);
-  if (rateLimited) return rateLimited;
-
-  // Require admin auth
-  await requireAdmin();
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
 
   const body = await req.json().catch(() => ({}));
   const parsed = productSchema.safeParse(body);
@@ -63,7 +44,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
   const product = await prisma.product.create({ data: parsed.data });
   return NextResponse.json(product);
 }
-

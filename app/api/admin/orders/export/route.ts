@@ -1,16 +1,21 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
+import { guardAdminApi } from "@/lib/api-security";
+import { decryptField } from "@/lib/encryption";
 import { NextRequest, NextResponse } from "next/server";
 
-function csvCell(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  const s = String(v);
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-  return s;
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const stringValue = String(value);
+  if (/[",\n\r]/.test(stringValue)) return `"${stringValue.replace(/"/g, '""')}"`;
+  return stringValue;
 }
 
 export async function GET(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const { searchParams } = req.nextUrl;
   const status = searchParams.get("status") || undefined;
   const q = searchParams.get("q")?.trim();
@@ -54,23 +59,23 @@ export async function GET(req: NextRequest) {
     "Delivered",
   ];
 
-  const rows = orders.map((o) =>
+  const rows = orders.map((order) =>
     [
-      o.orderNumber,
-      o.status,
-      o.game?.name,
-      o.product?.name,
-      o.playerUid,
-      o.serverId,
-      o.amountUsd.toFixed(2),
-      o.amountKhr,
-      o.customerEmail,
-      o.customerPhone,
-      o.paymentMethod,
-      o.paymentRef,
-      o.createdAt.toISOString(),
-      o.paidAt?.toISOString() ?? "",
-      o.deliveredAt?.toISOString() ?? "",
+      order.orderNumber,
+      order.status,
+      order.game?.name,
+      order.product?.name,
+      order.playerUid,
+      order.serverId,
+      order.amountUsd.toFixed(2),
+      order.amountKhr,
+      decryptField(order.customerEmail) ?? order.customerEmail,
+      decryptField(order.customerPhone) ?? order.customerPhone,
+      order.paymentMethod,
+      order.paymentRef,
+      order.createdAt.toISOString(),
+      order.paidAt?.toISOString() ?? "",
+      order.deliveredAt?.toISOString() ?? "",
     ]
       .map(csvCell)
       .join(",")
@@ -87,4 +92,3 @@ export async function GET(req: NextRequest) {
     },
   });
 }
-

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { writeAudit } from "@/lib/audit";
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 import { updateUserTotalSpent } from "@/lib/auth";
 
@@ -11,10 +12,12 @@ import { updateUserTotalSpent } from "@/lib/auth";
  * Body (all optional):
  *   { status?: "PENDING" | ... | "ALL", confirm: "DELETE" }
  *
- * Without `confirm: "DELETE"` the request is refused — this is a destructive
- * operation and we don't want it triggered by accident or by a bug in a client.
+ * Without `confirm: "DELETE"` the request is refused.
  */
 export async function DELETE(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const body = await req.json().catch(() => ({}));
   if (body.confirm !== "DELETE") {
     return NextResponse.json(
@@ -44,6 +47,9 @@ export async function DELETE(req: NextRequest) {
  *   { orderIds: string[], action: "mark_paid" | "mark_delivered" | "mark_failed" | "refund" }
  */
 export async function PATCH(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const body = await req.json().catch(() => ({}));
   const { orderIds, action } = body;
 
@@ -55,7 +61,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Missing action" }, { status: 400 });
   }
 
-  const updates: Record<string, any> = {};
+  const updates: Record<string, unknown> = {};
 
   switch (action) {
     case "mark_paid":
@@ -86,6 +92,7 @@ export async function PATCH(req: NextRequest) {
       where: { id: { in: orderIds }, userId: { not: null } },
       select: { userId: true, amountUsd: true },
     });
+
     for (const order of orders) {
       if (order.userId) {
         await updateUserTotalSpent(order.userId, order.amountUsd);
@@ -101,4 +108,3 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ ok: true, updated: results.count });
 }
-

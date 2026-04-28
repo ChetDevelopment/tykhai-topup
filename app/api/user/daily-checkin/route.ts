@@ -1,16 +1,12 @@
-import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { guardUserApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
 
-export async function POST() {
-  const session = await getCurrentUser();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function POST(req: NextRequest) {
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
-  const userId = session.userId;
-
-  // Check if already checked in today (GMT+7 for Cambodia)
+  const userId = security.user.userId;
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -18,9 +14,7 @@ export async function POST() {
     where: {
       userId,
       type: "DAILY_CHECKIN",
-      createdAt: {
-        gte: today,
-      },
+      createdAt: { gte: today },
     },
   });
 
@@ -28,7 +22,6 @@ export async function POST() {
     return NextResponse.json({ error: "Already checked in today!" }, { status: 400 });
   }
 
-  // Award 5 points
   await prisma.$transaction([
     prisma.pointTransaction.create({
       data: {
@@ -40,9 +33,7 @@ export async function POST() {
     prisma.user.update({
       where: { id: userId },
       data: {
-        pointsBalance: {
-          increment: 5,
-        },
+        pointsBalance: { increment: 5 },
       },
     }),
   ]);
@@ -50,22 +41,18 @@ export async function POST() {
   return NextResponse.json({ ok: true, pointsAwarded: 5 });
 }
 
-export async function GET() {
-  const session = await getCurrentUser();
-  if (!session) {
-    return NextResponse.json({ checkedIn: false });
-  }
+export async function GET(req: NextRequest) {
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   const lastCheckin = await prisma.pointTransaction.findFirst({
     where: {
-      userId: session.userId,
+      userId: security.user.userId,
       type: "DAILY_CHECKIN",
-      createdAt: {
-        gte: today,
-      },
+      createdAt: { gte: today },
     },
   });
 

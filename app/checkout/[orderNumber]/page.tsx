@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import ReviewForm from "@/components/ReviewForm";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -86,6 +86,7 @@ function formatSecondaryAmount(order: Pick<OrderPayment, "amountUsd" | "amountKh
 }
 
 export default function CheckoutPage() {
+  const router = useRouter();
   const params = useParams<{ orderNumber: string }>();
   const orderNumber = (params?.orderNumber || "").toUpperCase();
 
@@ -99,18 +100,30 @@ export default function CheckoutPage() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [activeTab, setActiveTab] = useState<"receipt" | "review">("receipt");
   const [hasAutoOpened, setHasAutoOpened] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [cancelling, setCancelling] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
 
   useEffect(() => {
-    fetch("/api/user/me")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.user) setUser(data.user);
+    fetch("/api/user/me", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) {
+          router.replace("/login");
+          return;
+        }
+
+        const data = await res.json();
+        if (!data.user) {
+          router.replace("/login");
+          return;
+        }
+
+        setUser(data.user);
+        setAuthReady(true);
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => router.replace("/login"));
+  }, [router]);
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -158,9 +171,10 @@ export default function CheckoutPage() {
   };
 
   useEffect(() => {
+    if (!authReady) return;
     setLoading(true);
     fetchOrder().finally(() => setLoading(false));
-  }, [fetchOrder]);
+  }, [authReady, fetchOrder]);
 
   useEffect(() => {
     if (!order) return;

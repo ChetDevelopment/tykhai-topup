@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
+import { guardAdminApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { z } from "zod";
@@ -9,17 +9,21 @@ const maintenanceSchema = z.object({
   message: z.string().optional(),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const settings = await prisma.settings.findUnique({
     where: { id: 1 },
-    select: { maintenanceMode: true, maintenanceMessage: true }
+    select: { maintenanceMode: true, maintenanceMessage: true },
   });
 
   return NextResponse.json(settings || { maintenanceMode: false });
 }
 
-export async function POST(req: NextRequest) {
-  const admin = await requireAdmin();
+async function updateMaintenance(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
 
   const body = await req.json().catch(() => ({}));
   const parsed = maintenanceSchema.safeParse(body);
@@ -46,9 +50,17 @@ export async function POST(req: NextRequest) {
     details: parsed.data.message || undefined,
   });
 
-  return NextResponse.json({ 
-    success: true, 
+  return NextResponse.json({
+    success: true,
     maintenanceMode: parsed.data.enabled,
-    message: parsed.data.message 
+    message: parsed.data.message,
   });
+}
+
+export async function POST(req: NextRequest) {
+  return updateMaintenance(req);
+}
+
+export async function PATCH(req: NextRequest) {
+  return updateMaintenance(req);
 }

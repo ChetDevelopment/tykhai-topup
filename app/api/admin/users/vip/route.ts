@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
+import { guardAdminApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { z } from "zod";
@@ -10,8 +10,9 @@ const vipSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest) {
-  const admin = await requireAdmin();
-  
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const body = await req.json().catch(() => ({}));
   const parsed = vipSchema.safeParse(body);
   if (!parsed.success) {
@@ -19,10 +20,9 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { userIds, vipRank } = parsed.data;
-
   const result = await prisma.user.updateMany({
     where: { id: { in: userIds } },
-    data: { vipRank }
+    data: { vipRank },
   });
 
   await writeAudit({

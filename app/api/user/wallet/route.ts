@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { guardUserApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -7,25 +7,21 @@ const topupSchema = z.object({
   amountUsd: z.number().min(1).max(500),
 });
 
-export async function GET() {
-  const session = await getCurrentUser();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
   const user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { walletBalance: true, pointsBalance: true }
+    where: { id: security.user.userId },
+    select: { walletBalance: true, pointsBalance: true },
   });
 
   return NextResponse.json(user || { walletBalance: 0, pointsBalance: 0 });
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getCurrentUser();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
   const body = await req.json().catch(() => ({}));
   const parsed = topupSchema.safeParse(body);
@@ -43,18 +39,20 @@ export async function POST(req: NextRequest) {
       orderNumber: `W-${Date.now().toString(36).toUpperCase()}`,
       gameId: "WALLET-TOPUP",
       productId: parsed.data.amountUsd.toString(),
-      playerUid: session.userId,
+      playerUid: security.user.userId,
       amountUsd: parsed.data.amountUsd,
-      amountKhr: settings.exchangeRate ? Math.round(parsed.data.amountUsd * settings.exchangeRate) : null,
+      amountKhr: settings.exchangeRate
+        ? Math.round(parsed.data.amountUsd * settings.exchangeRate)
+        : null,
       currency: "USD",
       paymentMethod: "BAKONG",
       status: "PENDING",
-      userId: session.userId,
-    }
+      userId: security.user.userId,
+    },
   });
 
-  return NextResponse.json({ 
+  return NextResponse.json({
     orderNumber: walletOrder.orderNumber,
-    amount: parsed.data.amountUsd
+    amount: parsed.data.amountUsd,
   });
 }

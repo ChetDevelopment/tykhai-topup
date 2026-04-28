@@ -4,22 +4,66 @@ export const dynamic = "force-dynamic";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { guardAdminApi } from "@/lib/api-security";
 
 export const runtime = "nodejs";
 
-// Max upload size: 5 MB
 const MAX_BYTES = 5 * 1024 * 1024;
 
-// Strict whitelist of allowed image types + their file extensions.
-const ALLOWED: Record<string, string> = {
+const ALLOWED_TYPES: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
   "image/webp": "webp",
   "image/gif": "gif",
-  "image/svg+xml": "svg",
 };
 
+function sniffMimeType(buffer: Buffer): string | null {
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+
+  if (
+    buffer.length >= 3 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+  ) {
+    return "image/jpeg";
+  }
+
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+
+  if (
+    buffer.length >= 6 &&
+    (buffer.subarray(0, 6).toString("ascii") === "GIF87a" ||
+      buffer.subarray(0, 6).toString("ascii") === "GIF89a")
+  ) {
+    return "image/gif";
+  }
+
+  return null;
+}
+
 export async function POST(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   try {
     const form = await req.formData();
     const file = form.get("file");
@@ -39,31 +83,35 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ext = ALLOWED[file.type];
-    if (!ext) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const detectedType = sniffMimeType(buffer);
+    if (!detectedType) {
       return NextResponse.json(
-        { error: `Unsupported type "${file.type}". Use PNG, JPG, WEBP, GIF, or SVG.` },
+        { error: "Unsupported file signature. Use PNG, JPG, WEBP, or GIF." },
         { status: 415 }
       );
     }
 
-    // Generate a safe random filename — ignore the client-supplied name
-    // entirely to prevent path traversal and collisions.
-    const name = `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.${ext}`;
+    if (file.type !== detectedType || !ALLOWED_TYPES[detectedType]) {
+      return NextResponse.json(
+        { error: `Unsupported type "${file.type}". Use PNG, JPG, WEBP, or GIF.` },
+        { status: 415 }
+      );
+    }
+
+    const name = `${Date.now()}-${crypto.randomBytes(16).toString("hex")}.${ALLOWED_TYPES[detectedType]}`;
     const uploadsDir = path.join(process.cwd(), "public", "uploads");
     await mkdir(uploadsDir, { recursive: true });
 
-    const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(path.join(uploadsDir, name), buffer);
 
     return NextResponse.json({
       url: `/uploads/${name}`,
       size: file.size,
-      type: file.type,
+      type: detectedType,
     });
-  } catch (err) {
-    console.error("[upload] error:", err);
+  } catch (error) {
+    console.error("[upload] error:", error);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 }
-

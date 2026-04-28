@@ -1,23 +1,12 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
-import { rateLimit, RATE_LIMITS, checkIPBlock } from "@/lib/rate-limit";
-
-const adminRateLimit = rateLimit(RATE_LIMITS.ADMIN_API);
 
 export async function GET(req: NextRequest) {
-  // Check IP block
-  const ipBlocked = checkIPBlock(req);
-  if (ipBlocked) return ipBlocked;
-
-  // Rate limiting
-  const rateLimited = await adminRateLimit(req);
-  if (rateLimited) return rateLimited;
-
-  // Require admin auth
-  await requireAdmin();
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
 
   const { searchParams } = req.nextUrl;
   const status = searchParams.get("status") || undefined;
@@ -25,7 +14,7 @@ export async function GET(req: NextRequest) {
   const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
   const perPage = Math.min(100, parseInt(searchParams.get("perPage") || "25"));
 
-  const where: any = {};
+  const where: Record<string, unknown> = {};
   if (status && status !== "ALL") where.status = status;
   if (q) {
     where.OR = [
@@ -57,4 +46,3 @@ export async function GET(req: NextRequest) {
     totalPages: Math.ceil(total / perPage),
   });
 }
-

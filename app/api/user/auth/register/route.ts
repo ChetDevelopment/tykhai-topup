@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createUserSession, setUserSessionCookie } from "@/lib/auth";
 import { isRealEmail } from "@/lib/email-validator";
 import { sanitizeEmail, sanitizeInput, validateUid, isSuspiciousRequest, logSecurityEvent } from "@/lib/security";
+import { encryptField } from "@/lib/encryption";
 
 export async function POST(req: NextRequest) {
   // Check for suspicious requests
@@ -77,10 +78,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Encrypt email before saving
+    const encryptedEmail = encryptField(email);
+    
     // Create user
     const user = await prisma.user.create({
       data: {
-        email,
+        email: encryptedEmail,
         passwordHash,
         name,
         referredById,

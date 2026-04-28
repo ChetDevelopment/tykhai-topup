@@ -1,15 +1,18 @@
-﻿import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-// Accept either a full http(s) URL or a local uploaded path like /uploads/xxx.png
 const imagePath = z
   .string()
   .min(1)
   .refine(
-    (v) => /^https?:\/\//i.test(v) || v.startsWith("/uploads/") || v.startsWith("/"),
+    (value) =>
+      /^https?:\/\//i.test(value) ||
+      value.startsWith("/uploads/") ||
+      value.startsWith("/"),
     { message: "Must be a URL or uploaded file path" }
   );
 
@@ -30,9 +33,12 @@ const updateSchema = z.object({
 });
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const game = await prisma.game.findUnique({
     where: { id: params.id },
     include: {
@@ -47,11 +53,18 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const body = await req.json().catch(() => ({}));
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid" }, { status: 400 });
   }
+
+  const existing = await prisma.game.findUnique({ where: { id: params.id } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   const game = await prisma.game.update({
     where: { id: params.id },
     data: parsed.data,
@@ -60,9 +73,15 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
+  const existing = await prisma.game.findUnique({ where: { id: params.id } });
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   await prisma.game.delete({ where: { id: params.id } });
   return NextResponse.json({ ok: true });
 }

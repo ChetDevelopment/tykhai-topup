@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Search, Package, CheckCircle2, XCircle, Truck, CreditCard, Send, FileText, Dices } from "lucide-react";
@@ -66,10 +67,12 @@ function formatSecondaryAmount(order: Pick<OrderInfo, "amountUsd" | "amountKhr" 
 }
 
 export default function OrderPage() {
+  const router = useRouter();
   const [orderNumber, setOrderNumber] = useState("");
   const [order, setOrder] = useState<OrderInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const TERMINAL_STATUSES = new Set(["DELIVERED", "FAILED", "REFUNDED", "CANCELLED"]);
@@ -100,6 +103,25 @@ export default function OrderPage() {
     [stopPolling]
   );
 
+  useEffect(() => {
+    fetch("/api/user/me", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) {
+          router.replace("/login");
+          return;
+        }
+
+        const data = await res.json();
+        if (!data.user) {
+          router.replace("/login");
+          return;
+        }
+
+        setAuthReady(true);
+      })
+      .catch(() => router.replace("/login"));
+  }, [router]);
+
   useEffect(() => stopPolling, [stopPolling]);
 
   async function lookup(e: React.FormEvent) {
@@ -128,6 +150,14 @@ export default function OrderPage() {
   const isFailed = order ? currentStep === -1 : false;
   const isPolling = order ? !TERMINAL_STATUSES.has(order.status) : false;
   const secondaryAmount = order ? formatSecondaryAmount(order) : null;
+
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-royal-bg flex items-center justify-center">
+        <div className="h-12 w-12 border-4 border-royal-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <>

@@ -1,20 +1,21 @@
-import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { guardUserApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
+import { decryptField } from "@/lib/encryption";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const session = await getCurrentUser();
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export async function GET(req: NextRequest) {
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
   const user = await prisma.user.findUnique({
-    where: { id: session.userId },
+    where: { id: security.user.userId },
     include: {
       referrer: {
-        select: { id: true, name: true, email: true }
-      }
-    }
+        select: { id: true, name: true, email: true },
+      },
+    },
   });
 
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -23,7 +24,7 @@ export async function GET() {
   const referralLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/register?ref=${referralCode}`;
 
   const referredUsers = await prisma.user.findMany({
-    where: { referredById: session.userId },
+    where: { referredById: security.user.userId },
     select: {
       id: true,
       name: true,
@@ -32,17 +33,26 @@ export async function GET() {
       referralEarnings: true,
       createdAt: true,
     },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
   });
 
+  // Decrypt emails
+  const decryptedReferredUsers = referredUsers.map(user => ({
+    ...user,
+    email: user.email ? (decryptField(user.email) || user.email) : user.email,
+  }));
+
   const totalReferrals = referredUsers.length;
-  const totalEarnings = referredUsers.reduce((sum, u) => sum + (u.referralEarnings || 0), 0);
+  const totalEarnings = referredUsers.reduce(
+    (sum, referredUser) => sum + (referredUser.referralEarnings || 0),
+    0
+  );
 
   return NextResponse.json({
     referralCode,
     referralLink,
     totalReferrals,
     totalEarnings,
-    referrals: referredUsers,
+    referrals: decryptedReferredUsers,
   });
 }

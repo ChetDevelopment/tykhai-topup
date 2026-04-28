@@ -2,14 +2,20 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
+import { guardAdminApi } from "@/lib/api-security";
 
 export async function GET(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const { searchParams } = req.nextUrl;
   const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
   const perPage = Math.min(100, parseInt(searchParams.get("perPage") || "50"));
   const action = searchParams.get("action") || undefined;
 
-  const where = action ? { action: { contains: action, mode: "insensitive" as const } } : {};
+  const where = action
+    ? { action: { contains: action, mode: "insensitive" as const } }
+    : {};
 
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
@@ -21,6 +27,11 @@ export async function GET(req: NextRequest) {
     prisma.auditLog.count({ where }),
   ]);
 
-  return NextResponse.json({ logs, total, page, perPage, totalPages: Math.ceil(total / perPage) });
+  return NextResponse.json({
+    logs,
+    total,
+    page,
+    perPage,
+    totalPages: Math.ceil(total / perPage),
+  });
 }
-

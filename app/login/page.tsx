@@ -9,7 +9,7 @@ import { signIn } from "next-auth/react";
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const modeParam = searchParams.get("mode");
+  const modeParam = searchParams?.get("mode");
   const [mode, setMode] = useState<"login" | "register">(
     modeParam === "register" ? "register" : "login"
   );

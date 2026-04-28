@@ -1,95 +1,94 @@
-import { NextResponse } from "next/server";
-import { getCurrentUser, requireUser } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { guardUserApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
-import { rateLimit, RATE_LIMITS, checkIPBlock } from "@/lib/rate-limit";
+import { decryptField } from "@/lib/encryption";
 
 export const dynamic = "force-dynamic";
 
-const userRateLimit = rateLimit(RATE_LIMITS.USER_API);
-const ipCheck = checkIPBlock;
-
 export async function GET(req: NextRequest) {
-  // Check IP block first
-  const ipBlocked = ipCheck(req);
-  if (ipBlocked) return ipBlocked;
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
-  // Apply rate limiting
-  const rateLimited = await userRateLimit(req);
-  if (rateLimited) return rateLimited;
-
-  try {
-    // Require authentication
-    const user = await requireUser();
-
-    const [boughtOrders, savedUids, recentOrders, wishlist, userData] = await Promise.all([
-      prisma.order.findMany({
-        where: {
-          userId: user.userId,
-          status: { in: ["PAID", "DELIVERED", "PROCESSING"] }
+  const user = security.user;
+  const [boughtOrders, savedUids, recentOrders, wishlist, userData] = await Promise.all([
+    prisma.order.findMany({
+      where: {
+        userId: user.userId,
+        status: { in: ["PAID", "DELIVERED", "PROCESSING"] },
+      },
+      select: { productId: true },
+    }),
+    prisma.savedUid.findMany({
+      where: { userId: user.userId },
+      include: {
+        game: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            imageUrl: true,
+            requiresServer: true,
+            servers: true,
+          },
         },
-        select: { productId: true }
-      }),
-      prisma.savedUid.findMany({
-        where: { userId: user.userId },
-        include: {
-          game: { select: { id: true, name: true, slug: true, imageUrl: true, requiresServer: true, servers: true } }
-        },
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.order.findMany({
-        where: {
-          userId: user.userId,
-          status: { in: ["PAID", "DELIVERED", "PROCESSING"] }
-        },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-        include: {
-          game: { select: { id: true, name: true, slug: true, imageUrl: true } },
-          product: { select: { id: true, name: true, priceUsd: true } }
-        }
-      }),
-      prisma.wishlist.findMany({
-        where: { userId: user.userId },
-        include: {
-          product: { include: { game: { select: { name: true, slug: true } } } }
-        }
-      }),
-      prisma.user.findUnique({
-        where: { id: user.userId },
-        select: { pointsBalance: true, walletBalance: true }
-      })
-    ]);
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.order.findMany({
+      where: {
+        userId: user.userId,
+        status: { in: ["PAID", "DELIVERED", "PROCESSING"] },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      include: {
+        game: { select: { id: true, name: true, slug: true, imageUrl: true } },
+        product: { select: { id: true, name: true, priceUsd: true } },
+      },
+    }),
+    prisma.wishlist.findMany({
+      where: { userId: user.userId },
+      include: {
+        product: { include: { game: { select: { name: true, slug: true } } } },
+      },
+    }),
+    prisma.user.findUnique({
+      where: { id: user.userId },
+      select: { pointsBalance: true, walletBalance: true },
+    }),
+  ]);
 
-    const boughtProductIds = Array.from(new Set(boughtOrders.map(o => o.productId)));
+  const boughtProductIds = Array.from(new Set(boughtOrders.map((order) => order.productId)));
+  const quickData = recentOrders.map((order) => ({
+    gameSlug: order.game.slug,
+    gameName: order.game.name,
+    gameImage: order.game.imageUrl,
+    productId: order.product.id,
+    productName: order.product.name,
+    lastPrice: order.product.priceUsd,
+    playerUid: order.playerUid,
+    serverId: order.serverId,
+  }));
 
-    const quickData = recentOrders.map(o => ({
-      gameSlug: o.game.slug,
-      gameName: o.game.name,
-      gameImage: o.game.imageUrl,
-      productId: o.product.id,
-      productName: o.product.name,
-      lastPrice: o.product.priceUsd,
-      playerUid: o.playerUid,
-      serverId: o.serverId,
-    }));
+  // Decrypt user email for response
+  const userWithDecryptedEmail = {
+    ...user,
+    email: user.email ? (decryptField(user.email) || user.email) : user.email,
+  };
 
-    return NextResponse.json({
-      user,
-      boughtProductIds,
-      savedUids,
-      quickData,
-      wishlist: wishlist.map(w => ({
-        productId: w.product.id,
-        productName: w.product.name,
-        priceUsd: w.product.priceUsd,
-        gameName: w.product.game.name,
-        gameSlug: w.product.game.slug,
-      })),
-      pointsBalance: userData?.pointsBalance || 0,
-      walletBalance: userData?.walletBalance || 0,
-    });
-  } catch (error) {
-    console.error("Session error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  return NextResponse.json({
+    user: userWithDecryptedEmail,
+    boughtProductIds,
+    savedUids,
+    quickData,
+    wishlist: wishlist.map((item) => ({
+      productId: item.product.id,
+      productName: item.product.name,
+      priceUsd: item.product.priceUsd,
+      gameName: item.product.game.name,
+      gameSlug: item.product.game.slug,
+    })),
+    pointsBalance: userData?.pointsBalance || 0,
+    walletBalance: userData?.walletBalance || 0,
+  });
 }
