@@ -20,24 +20,25 @@ const updateSchema = z.object({
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const security = await guardAdminApi(req);
   if ("response" in security) return security.response;
 
+  const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid" }, { status: 400 });
   }
 
-  const existing = await prisma.product.findUnique({ where: { id: params.id } });
+  const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const product = await prisma.product.update({
-    where: { id: params.id },
+    where: { id },
     data: parsed.data,
   });
   return NextResponse.json(product);
@@ -45,16 +46,17 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const security = await guardAdminApi(req);
   if ("response" in security) return security.response;
 
-  const existing = await prisma.product.findUnique({ where: { id: params.id } });
+  const { id } = await params;
+  const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await prisma.product.delete({ where: { id: params.id } });
+  await prisma.product.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

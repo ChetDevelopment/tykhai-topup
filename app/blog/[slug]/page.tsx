@@ -9,11 +9,12 @@ import { ArrowLeft } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 interface Props {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const post = await prisma.blogPost.findUnique({ where: { slug: params.slug } });
+  const { slug } = await params;
+  const post = await prisma.blogPost.findUnique({ where: { slug } });
   if (!post || !post.published) return { title: "Not found" };
   return {
     title: `${post.title} — Ty Khai TopUp`,
@@ -42,7 +43,8 @@ function renderContent(raw: string) {
 }
 
 export default async function BlogPostPage({ params }: Props) {
-  const post = await prisma.blogPost.findUnique({ where: { slug: params.slug } });
+  const { slug } = await params;
+  const post = await prisma.blogPost.findUnique({ where: { slug } });
   if (!post || !post.published) notFound();
 
   return (

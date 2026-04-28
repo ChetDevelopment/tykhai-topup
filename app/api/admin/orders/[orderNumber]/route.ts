@@ -24,12 +24,13 @@ const updateSchema = z.object({
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  { params }: { params: Promise<{ orderNumber: string }> }
 ) {
-  logSecurityEvent("ACCESS", "Order details viewed", req, { orderNumber: params.orderNumber });
-  
+  const { orderNumber } = await params;
+  logSecurityEvent("ACCESS", "Order details viewed", req, { orderNumber });
+
   const order = await prisma.order.findUnique({
-    where: { orderNumber: params.orderNumber },
+    where: { orderNumber },
     include: {
       game: true,
       product: true,
@@ -41,8 +42,9 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  { params }: { params: Promise<{ orderNumber: string }> }
 ) {
+  const { orderNumber } = await params;
   const body = await req.json().catch(() => ({}));
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
@@ -50,7 +52,7 @@ export async function PATCH(
   }
 
   const order = await prisma.order.findUnique({
-    where: { orderNumber: params.orderNumber },
+    where: { orderNumber },
   });
   if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

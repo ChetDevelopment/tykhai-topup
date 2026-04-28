@@ -18,28 +18,30 @@ const schema = z.object({
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const security = await guardAdminApi(req);
   if ("response" in security) return security.response;
 
-  const post = await prisma.blogPost.findUnique({ where: { id: params.id } });
+  const { id } = await params;
+  const post = await prisma.blogPost.findUnique({ where: { id } });
   if (!post) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(post);
 }
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const security = await guardAdminApi(req);
   if ("response" in security) return security.response;
 
+  const { id } = await params;
   const body = await req.json().catch(() => ({}));
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid" }, { status: 400 });
 
-  const existing = await prisma.blogPost.findUnique({ where: { id: params.id } });
+  const existing = await prisma.blogPost.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const data: Record<string, unknown> = { ...parsed.data };
@@ -50,11 +52,11 @@ export async function PATCH(
     data.publishedAt = null;
   }
 
-  const post = await prisma.blogPost.update({ where: { id: params.id }, data });
+  const post = await prisma.blogPost.update({ where: { id }, data });
   await writeAudit({
     action: "blog.update",
     targetType: "blog",
-    targetId: params.id,
+    targetId: id,
     details: parsed.data,
   });
   return NextResponse.json(post);
@@ -62,19 +64,20 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const security = await guardAdminApi(req);
   if ("response" in security) return security.response;
 
-  const existing = await prisma.blogPost.findUnique({ where: { id: params.id } });
+  const { id } = await params;
+  const existing = await prisma.blogPost.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.blogPost.delete({ where: { id: params.id } });
+  await prisma.blogPost.delete({ where: { id } });
   await writeAudit({
     action: "blog.delete",
     targetType: "blog",
-    targetId: params.id,
+    targetId: id,
   });
   return NextResponse.json({ ok: true });
 }

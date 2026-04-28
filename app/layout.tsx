@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Space_Grotesk, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { prisma } from "@/lib/prisma";
 import { CurrencyProvider } from "@/lib/currency";
@@ -10,6 +11,24 @@ import Providers from "@/components/Providers";
 import LiveRefresher from "@/components/LiveRefresher";
 import SupportBubble from "@/components/SupportBubble";
 import LiveDeliveryFeed from "@/components/LiveDeliveryFeed";
+
+const spaceGrotesk = Space_Grotesk({ 
+  subsets: ["latin"], 
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-space-grotesk" 
+});
+
+const plusJakarta = Plus_Jakarta_Sans({ 
+  subsets: ["latin"], 
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-plus-jakarta" 
+});
+
+const jetbrainsMono = JetBrains_Mono({ 
+  subsets: ["latin"], 
+  weight: ["400", "600"],
+  variable: "--font-jetbrains-mono" 
+});
 
 export const metadata: Metadata = {
   title: "Ty Khai TopUp — Fast & Secure Game Top Up",
@@ -54,7 +73,7 @@ export default async function RootLayout({
   const session = await getServerSession(authOptions);
 
   return (
-    <html lang="en">
+    <html lang="en" className={`${spaceGrotesk.variable} ${plusJakarta.variable} ${jetbrainsMono.variable}`}>
       <body>
         <Providers session={session}>
           <SecurityWrapper>

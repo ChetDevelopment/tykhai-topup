@@ -341,13 +341,14 @@ function renderPdf(order: {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  { params }: { params: Promise<{ orderNumber: string }> }
 ) {
   const security = await guardUserApi(req, ordersApiRateLimit);
   if ("response" in security) return security.response;
 
+  const { orderNumber } = await params;
   const order = await prisma.order.findUnique({
-    where: { orderNumber: params.orderNumber.toUpperCase() },
+    where: { orderNumber: orderNumber.toUpperCase() },
     include: {
       game: { select: { name: true, publisher: true, currencyName: true } },
       product: { select: { name: true, amount: true, bonus: true, priceUsd: true } },

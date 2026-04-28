@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap");
-
 :root {
   --royal-bg: #040408;
   --royal-surface: #0A0A14;
@@ -28,7 +26,7 @@ html,
 body {
   background: var(--royal-bg);
   color: var(--royal-text);
-  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  font-family: var(--font-plus-jakarta), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
 }
@@ -172,5 +170,14 @@ body::before {
 
 .command-input-glow {
   @apply shadow-[0_0_50px_-12px_rgba(99,102,241,0.5)];
+}
+
+/* Font utility classes */
+.font-space-grotesk {
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+}
+
+.font-jetbrains-mono {
+  font-family: var(--font-jetbrains-mono), monospace;
 }
 
