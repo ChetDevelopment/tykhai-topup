@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { encryptField } from "@/lib/encryption";
 
 const resellerSchema = z.object({
   email: z.string().email(),
