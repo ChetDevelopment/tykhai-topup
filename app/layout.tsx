@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { CurrencyProvider } from "@/lib/currency";
 import RouteProgress from "@/components/RouteProgress";
 import AnnouncementBar from "@/components/AnnouncementBar";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import Providers from "@/components/Providers";
 import LiveRefresher from "@/components/LiveRefresher";
 import SupportBubble from "@/components/SupportBubble";
@@ -49,11 +51,12 @@ export default async function RootLayout({
 }) {
   const settings = await prisma.settings.findUnique({ where: { id: 1 } }).catch(() => null);
   const exchangeRate = settings?.exchangeRate ?? 4100;
+  const session = await getServerSession(authOptions);
 
   return (
     <html lang="en">
       <body>
-        <Providers>
+        <Providers session={session}>
           <SecurityWrapper>
             <RouteProgress />
             <CurrencyProvider exchangeRate={exchangeRate}>

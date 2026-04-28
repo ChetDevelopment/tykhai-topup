@@ -99,7 +99,14 @@ export async function POST(req: NextRequest) {
     const orderNumber = generateOrderNumber();
     const userAgent = req.headers.get("user-agent") ?? "unknown";
     const exchangeRate = settings?.exchangeRate ?? 4100;
-    const user = await getCurrentUser();
+     const user = await getCurrentUser();
+
+     if (data.paymentMethod === "WALLET" && !user) {
+       return NextResponse.json(
+         { error: "Please login to use wallet payment" },
+         { status: 400 }
+       );
+     }
 
     // Promo code handling
     let promoCodeId: string | null = null;
@@ -240,14 +247,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Payment gateway
-    const publicUrl = process.env.PUBLIC_APP_URL || baseUrl;
-    const init = await initiatePayment({
-      orderNumber: order.orderNumber,
-      amountUsd: order.amountUsd,
-      amountKhr: order.amountKhr,
-      currency: order.currency as PaymentCurrency,
-      method: "BAKONG",
+     // Payment gateway
+     const publicUrl = process.env.PUBLIC_APP_URL || baseUrl;
+     const init = await initiatePayment({
+       orderNumber: order.orderNumber,
+       amountUsd: order.amountUsd,
+       amountKhr: order.amountKhr,
+       currency: order.currency as PaymentCurrency,
+       method: data.paymentMethod,
       returnUrl: `${publicUrl}/order?number=${order.orderNumber}`,
       cancelUrl: `${publicUrl}/games/${game.slug}`,
       callbackUrl: `${publicUrl}/api/payment/webhook/bakong`,
