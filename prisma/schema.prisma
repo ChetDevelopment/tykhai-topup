@@ -79,20 +79,21 @@ model Order {
   playerUid      String
   serverId       String?
   playerNickname String?      // optional nickname pulled after validation
-  customerEmail  String?
-  customerPhone  String?
+  customerEmail  String?      // Encrypted with encryptField()
+  customerPhone  String?      // Encrypted with encryptField()
   amountUsd      Float
   amountKhr      Float?
   currency       String       @default("USD")
   paymentMethod  String       // BAKONG | WALLET
-  paymentRef     String?      // gateway transaction id
-  paymentUrl     String?      // redirect URL from gateway
-  qrString       String?      // KHQR EMV payload (for on-site display)
+  paymentRef     String?      // SHA256 hash (encrypted in transit)
+  paymentRefEnc  String?      // Encrypted payment reference for extra security
+  paymentUrl     String?      // Encrypted (contains sensitive gateway data)
+  qrString       String?      // Encrypted (KHQR contains sensitive data)
   paymentExpiresAt DateTime?  // QR/payment expiry time
   status         String       @default("PENDING") // PENDING | PAID | PROCESSING | DELIVERED | FAILED | REFUNDED | CANCELLED
   deliveryNote   String?      // admin notes about delivery
   failureReason  String?
-  ipAddress      String?
+  ipAddress      String?      // Encrypted for privacy
   userAgent      String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

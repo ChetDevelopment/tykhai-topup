@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isRealEmail } from "@/lib/email-validator";
 import { rateLimit } from "@/lib/rate-limit";
+import { encryptField, hashSha256 } from "@/lib/encryption";
 
 const orderRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -195,6 +196,11 @@ export async function POST(req: NextRequest) {
 
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
+    // Encrypt sensitive data before storing
+    const encryptedEmail = encryptField(data.customerEmail);
+    const encryptedPhone = encryptField(data.customerPhone);
+    const encryptedIp = encryptField(ipAddress);
+
     const order = await prisma.order.create({
       data: {
         orderNumber,
@@ -203,14 +209,14 @@ export async function POST(req: NextRequest) {
         playerUid: data.playerUid,
         serverId: data.serverId,
         playerNickname: data.playerNickname,
-        customerEmail: data.customerEmail,
-        customerPhone: data.customerPhone,
+        customerEmail: encryptedEmail, // Encrypted
+        customerPhone: encryptedPhone, // Encrypted
         amountUsd: finalPrice,
         amountKhr: calcKhr(finalPrice, exchangeRate),
         currency: data.currency,
         paymentMethod: data.paymentMethod,
         status: walletDeducted ? "PAID" : "PENDING",
-        ipAddress,
+        ipAddress: encryptedIp, // Encrypted for privacy
         userAgent,
         promoCodeId,
         discountUsd,

@@ -1,5 +1,6 @@
 ﻿import crypto from "crypto";
 import { KHQR } from "bakong-khqr-npm";
+import { hashSha256, encryptField, generateSecureRef } from "./encryption";
 
 export type PaymentMethod = "BAKONG" | "WALLET" | "TRUEMONEY" | "WING" | "BANK" | "USDT" | "MANUAL";
 export type PaymentCurrency = "USD" | "KHR" | "USDT";
@@ -83,26 +84,31 @@ async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitRes
     static: true,
   });
   
-  if (!qrResult) {
-    throw new Error("Bakong: failed to generate QR");
-  }
+   if (!qrResult) {
+     throw new Error("Bakong: failed to generate QR");
+   }
 
-  const md5Hash = khqr.generate_md5(qrResult);
+   // Use SHA256 instead of MD5 for better security
+   const secureRef = hashSha256(qrResult).slice(0, 64);
+   const paymentRef = secureRef;
 
-  const paymentRef = md5Hash;
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-  const redirectUrl = `${baseUrl}/checkout/${args.orderNumber}`;
+   // Encrypt sensitive QR string before storing
+   const encryptedQr = encryptField(qrResult);
 
-  return {
-    paymentRef,
-    redirectUrl,
-    qrString: qrResult,
-    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-    instructions: `Scan the QR code with Bakong app to pay ${amount} ${args.currency}`,
-  };
+   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+   const redirectUrl = `${baseUrl}/checkout/${args.orderNumber}`;
+
+   return {
+     paymentRef,
+     redirectUrl,
+     qrString: qrResult, // Return unencrypted for immediate use
+     qrStringEnc: encryptedQr, // Encrypted version for storage
+     expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+     instructions: `Scan the QR code with Bakong app to pay ${amount} ${args.currency}`,
+   };
 }
 
-export async function checkBakongPayment(md5Hash: string): Promise<{
+export async function checkBakongPayment(paymentRef: string): Promise<{
   status: string;
   paid: boolean;
   amount?: string;
@@ -115,8 +121,16 @@ export async function checkBakongPayment(md5Hash: string): Promise<{
   const khqr = new KHQR(BAKONG_TOKEN, "https://api-bakong.nbc.gov.kh/v1");
 
   try {
-    console.log("[bakong] check_payment:", md5Hash);
-    const result = await khqr.check_payment(md5Hash);
+    // Convert to SHA256 if it looks like an MD5 hash (32 hex chars)
+    let refToCheck = paymentRef;
+    if (paymentRef.length === 32 && /^[a-f0-9]+$/.test(paymentRef)) {
+      // This is likely an MD5, convert to SHA256
+      refToCheck = hashSha256(paymentRef).slice(0, 64);
+      console.log("[bakong] Converted MD5 to SHA256 for lookup");
+    }
+
+    console.log("[bakong] check_payment:", refToCheck);
+    const result = await khqr.check_payment(refToCheck);
     console.log("[bakong] check_payment result:", result, "type:", typeof result);
     return {
       status: result as string || "UNPAID",

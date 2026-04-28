@@ -6,6 +6,7 @@ import { notifyTelegram, escapeHtml } from "@/lib/telegram";
 import { updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeInput, isSuspiciousRequest, logSecurityEvent } from "@/lib/security";
+import { hashSha256, verifyWebhookSignature } from "@/lib/encryption";
 
 export async function POST(req: NextRequest) {
   // Check for suspicious requests
@@ -16,18 +17,35 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const rawBody = JSON.stringify(body);
     
-    // Validate required fields
-    const md5Hash = sanitizeInput(body.md5 || body.md5hash || body.transaction_id || "");
+    // Verify webhook signature if provided
+    const signature = req.headers.get("x-bakong-signature") || req.headers.get("x-signature");
+    if (signature && process.env.BAKONG_WEBHOOK_SECRET) {
+      const isValid = verifyWebhookSignature(rawBody, signature, process.env.BAKONG_WEBHOOK_SECRET);
+      if (!isValid) {
+        logSecurityEvent("INVALID_WEBHOOK_SIGNATURE", { signature }, req);
+        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      }
+    }
     
-    if (!md5Hash || md5Hash.length < 10) {
+    // Get payment reference (use SHA256 internally instead of MD5)
+    const paymentRef = sanitizeInput(body.md5 || body.md5hash || body.transaction_id || "");
     
-    if (!md5Hash || md5Hash.length < 10) {
-      return NextResponse.json({ error: "Invalid md5 hash" }, { status: 400 });
+    if (!paymentRef || paymentRef.length < 10) {
+      return NextResponse.json({ error: "Invalid payment reference" }, { status: 400 });
     }
 
+    // Convert to SHA256 for internal lookup (more secure than MD5)
+    const secureRef = hashSha256(paymentRef).slice(0, 64);
+    
     const order = await prisma.order.findFirst({
-      where: { paymentRef: md5Hash },
+      where: { 
+        OR: [
+          { paymentRef: paymentRef },
+          { paymentRef: secureRef }
+        ]
+      },
       include: { game: true, product: true },
     });
 
@@ -39,7 +57,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
-    const result = await checkBakongPayment(md5Hash);
+    const result = await checkBakongPayment(paymentRef);
     if (!result || !result.paid) {
       return NextResponse.json({ status: "UNPAID" });
     }
@@ -50,6 +68,7 @@ export async function POST(req: NextRequest) {
         status: "DELIVERED",
         paidAt: new Date(),
         deliveredAt: new Date(),
+        paymentRef: secureRef, // Store SHA256 version instead of MD5
       },
     });
 
@@ -72,6 +91,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "PAID", orderNumber: order.orderNumber });
   } catch (err) {
     console.error("[bakong-webhook] error:", err);
+    logSecurityEvent("WEBHOOK_ERROR", { error: String(err) }, req);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }
