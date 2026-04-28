@@ -5,14 +5,25 @@ import { checkBakongPayment } from "@/lib/payment";
 import { notifyTelegram, escapeHtml } from "@/lib/telegram";
 import { updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { sanitizeInput, isSuspiciousRequest, logSecurityEvent } from "@/lib/security";
 
 export async function POST(req: NextRequest) {
+  // Check for suspicious requests
+  if (isSuspiciousRequest(req)) {
+    logSecurityEvent("SUSPICIOUS_WEBHOOK", { url: req.url }, req);
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   try {
     const body = await req.json();
-    const md5Hash = body.md5 || body.md5hash || body.transaction_id;
     
-    if (!md5Hash) {
-      return NextResponse.json({ error: "Missing md5 hash" }, { status: 400 });
+    // Validate required fields
+    const md5Hash = sanitizeInput(body.md5 || body.md5hash || body.transaction_id || "");
+    
+    if (!md5Hash || md5Hash.length < 10) {
+    
+    if (!md5Hash || md5Hash.length < 10) {
+      return NextResponse.json({ error: "Invalid md5 hash" }, { status: 400 });
     }
 
     const order = await prisma.order.findFirst({

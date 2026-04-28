@@ -1,12 +1,23 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { createUserSession, setUserSessionCookie } from "@/lib/auth";
 import { isRealEmail } from "@/lib/email-validator";
+import { sanitizeEmail, sanitizeInput, validateUid, isSuspiciousRequest, logSecurityEvent } from "@/lib/security";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  // Check for suspicious requests
+  if (isSuspiciousRequest(req)) {
+    logSecurityEvent("SUSPICIOUS_REGISTRATION", { url: req.url }, req);
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   try {
-    const { email, password, name, referralCode } = await req.json();
+    const body = await req.json();
+    const email = sanitizeEmail(body.email || "");
+    const password = body.password || "";
+    const name = sanitizeInput(body.name || "", 50);
+    const referralCode = sanitizeInput(body.referralCode || "", 20);
 
     if (!email || !password) {
       return NextResponse.json(
@@ -23,9 +34,17 @@ export async function POST(req: Request) {
       );
     }
 
-    if (password.length < 6) {
+    if (password.length < 8) {
       return NextResponse.json(
-        { error: "Password must be at least 6 characters" },
+        { error: "Password must be at least 8 characters" },
+        { status: 400 }
+      );
+    }
+
+    // Check password strength
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+      return NextResponse.json(
+        { error: "Password must contain uppercase, lowercase, and numbers" },
         { status: 400 }
       );
     }

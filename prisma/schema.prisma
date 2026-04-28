@@ -9,7 +9,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -84,7 +84,7 @@ model Order {
   amountUsd      Float
   amountKhr      Float?
   currency       String       @default("USD")
-  paymentMethod  String       // ABA_PAY | BINANCE_PAY | MANUAL
+  paymentMethod  String       // BAKONG | WALLET
   paymentRef     String?      // gateway transaction id
   paymentUrl     String?      // redirect URL from gateway
   qrString       String?      // KHQR EMV payload (for on-site display)

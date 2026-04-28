@@ -6,6 +6,7 @@ import { notifyTelegram, escapeHtml } from "@/lib/telegram";
 import { updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { logSecurityEvent } from "@/lib/logger";
 
 const updateSchema = z.object({
   status: z.enum([
@@ -22,9 +23,11 @@ const updateSchema = z.object({
 });
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { orderNumber: string } }
 ) {
+  logSecurityEvent("ACCESS", "Order details viewed", req, { orderNumber: params.orderNumber });
+  
   const order = await prisma.order.findUnique({
     where: { orderNumber: params.orderNumber },
     include: {

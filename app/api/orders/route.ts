@@ -7,6 +7,12 @@ import { getCurrentUser, updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isRealEmail } from "@/lib/email-validator";
+import { rateLimit } from "@/lib/rate-limit";
+
+const orderRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  maxRequests: 10, // 10 orders per minute per IP
+});
 
 const createOrderSchema = z.object({
   gameId: z.string().min(1),
@@ -23,6 +29,10 @@ const createOrderSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // Apply rate limiting
+  const rateLimitResult = await orderRateLimit(req);
+  if (rateLimitResult) return rateLimitResult;
+
   try {
     const body = await req.json();
     const parsed = createOrderSchema.safeParse(body);
