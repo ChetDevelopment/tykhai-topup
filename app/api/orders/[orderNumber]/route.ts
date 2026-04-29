@@ -77,12 +77,14 @@ export async function GET(
           }, { status: 400 });
         }
 
-        // PAYMENT VERIFIED - Mark as PAID
+        // PAYMENT VERIFIED - Mark as PAID and AUTO-DELIVER immediately
+        // No 30-second delay needed - deliver right after payment confirmation
         order = await prisma.order.update({
           where: { id: order.id },
           data: {
-            status: "PAID",
+            status: "DELIVERED", // Auto-deliver immediately
             paidAt: new Date(),
+            deliveredAt: new Date(),
             paymentRef: order.paymentRef, // Keep the verified payment ref
           },
           include: {
@@ -95,11 +97,6 @@ export async function GET(
         if (order.userId) {
           await updateUserTotalSpent(order.userId, order.amountUsd);
         }
-
-        // SERVER-SIDE DELAY: Wait 30 seconds before delivery
-        // This runs in the background - we don't await it here to avoid blocking the response
-        // The actual delivery will be triggered by the next poll or webhook
-        scheduleDelivery(order);
 
         const customerEmail = decryptField(order.customerEmail) ?? order.customerEmail;
         if (customerEmail) {
@@ -139,32 +136,6 @@ export async function GET(
         orderNumber: order.orderNumber,
         error: String(error),
       }, req);
-    }
-  }
-
-  // Handle delivery for PAID orders (server-side 30s delay)
-  if (order.status === "PAID" && !order.deliveredAt) {
-    const timeSincePaid = order.paidAt ? Date.now() - new Date(order.paidAt).getTime() : 0;
-
-    if (timeSincePaid >= 30000) { // 30 seconds
-      // Idempotency check: check if delivery was already attempted by checking status
-      // Since we only mark as DELIVERED after successful delivery, this is safe
-      try {
-        await deliverOrder(order);
-      } catch (error) {
-        logSecurityEvent("DELIVERY_FAILED", {
-          orderNumber: order.orderNumber,
-          error: String(error),
-        }, req);
-
-        await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            status: "FAILED",
-            failureReason: `Delivery failed: ${String(error).slice(0, 200)}`,
-          },
-        });
-      }
     }
   }
 
@@ -208,16 +179,6 @@ function validatePaymentAmount(order: any, remote: any): boolean {
   const tolerance = order.currency === "KHR" ? 0 : 0.01;
 
   return Math.abs(paidAmount - expectedAmount) <= tolerance;
-}
-
-/**
- * Schedule delivery to happen after 30 seconds
- * This is non-blocking - delivery will be triggered on next poll
- */
-function scheduleDelivery(order: any) {
-  // Mark that delivery is scheduled (but don't await the delay here)
-  // The actual delay happens in the polling logic above
-  console.log(`[delivery] Scheduled delivery for order ${order.orderNumber} after 30s delay`);
 }
 
 /**
