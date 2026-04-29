@@ -55,7 +55,7 @@ export async function checkCsrf(req: NextRequest): Promise<NextResponse | null> 
 }
 
 // Get CSRF token for client
-export async function getCsrfToken(req: NextRequest): NextResponse {
+export async function getCsrfToken(req: NextRequest): Promise<NextResponse> {
   const cookies = req.headers.get("cookie") || "";
   const sessionMatch = cookies.match(/tykhai_(admin|user)=([^;]+)/);
   
