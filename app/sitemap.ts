@@ -1,8 +1,7 @@
+import { MetadataRoute } from 'next'
 import { prisma } from "@/lib/prisma";
 
-export const dynamic = "force-dynamic";
-
-export async function GET() {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
   
   const [games, pages] = await Promise.all([
@@ -17,46 +16,29 @@ export async function GET() {
   ]);
 
   const staticPages = [
-    { url: "", lastmod: new Date() },
-    { url: "/login", lastmod: new Date() },
-    { url: "/register", lastmod: new Date() },
-    { url: "/order", lastmod: new Date() },
-    { url: "/account", lastmod: new Date() },
-    { url: "/support", lastmod: new Date() },
-    { url: "/faq", lastmod: new Date() },
-    { url: "/terms", lastmod: new Date() },
-    { url: "/privacy", lastmod: new Date() },
-    { url: "/refund-policy", lastmod: new Date() },
-    { url: "/blog", lastmod: new Date() },
-    { url: "/reseller", lastmod: new Date() },
+    { url: baseUrl, lastModified: new Date() },
+    { url: `${baseUrl}/login`, lastModified: new Date() },
+    { url: `${baseUrl}/register`, lastModified: new Date() },
+    { url: `${baseUrl}/order`, lastModified: new Date() },
+    { url: `${baseUrl}/account`, lastModified: new Date() },
+    { url: `${baseUrl}/support`, lastModified: new Date() },
+    { url: `${baseUrl}/faq`, lastModified: new Date() },
+    { url: `${baseUrl}/terms`, lastModified: new Date() },
+    { url: `${baseUrl}/privacy`, lastModified: new Date() },
+    { url: `${baseUrl}/refund-policy`, lastModified: new Date() },
+    { url: `${baseUrl}/blog`, lastModified: new Date() },
+    { url: `${baseUrl}/reseller`, lastModified: new Date() },
   ];
 
   const gamePages = games.map(game => ({
-    url: `/games/${game.slug}`,
-    lastmod: game.updatedAt,
+    url: `${baseUrl}/games/${game.slug}`,
+    lastModified: game.updatedAt,
   }));
 
   const blogPages = pages.map(page => ({
-    url: `/blog/${page.slug}`,
-    lastmod: page.publishedAt || page.updatedAt,
+    url: `${baseUrl}/blog/${page.slug}`,
+    lastModified: page.publishedAt || page.updatedAt,
   }));
 
-  const allUrls = [...staticPages, ...gamePages, ...blogPages];
-
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${allUrls.map(p => `  <url>
-    <loc>${baseUrl}${p.url}</loc>
-    <lastmod>${p.lastmod.toISOString()}</lastmod>
-    <changefreq>${p.url === "" ? "daily" : "weekly"}</changefreq>
-    <priority>${p.url === "" ? 1.0 : 0.8}</priority>
-  </url>`).join("\n")}
-</urlset>`;
-
-  return new Response(xml, {
-    headers: {
-      "Content-Type": "application/xml",
-      "Cache-Control": "s-maxage=3600, stale-while-revalidate",
-    },
-  });
+  return [...staticPages, ...gamePages, ...blogPages];
 }
