@@ -67,6 +67,7 @@ model Product {
   updatedAt   DateTime @updatedAt
 
   @@index([gameId, active])
+  @@unique([gameId, name])
 }
 
 model Order {

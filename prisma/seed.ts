@@ -185,12 +185,22 @@ async function main() {
       create: gameData,
     });
 
-    // Clear old products for this game and recreate to keep seed idempotent
-    await prisma.product.deleteMany({ where: { gameId: game.id } });
+    // Upsert products instead of delete+create to avoid foreign key issues
     for (let i = 0; i < products.length; i++) {
       const p = products[i];
-      await prisma.product.create({
-        data: {
+      await prisma.product.upsert({
+        where: {
+          gameId_name: {
+            gameId: game.id,
+            name: p.name,
+          },
+        },
+        update: {
+          ...p,
+          sortOrder: i,
+          active: true,
+        },
+        create: {
           ...p,
           gameId: game.id,
           sortOrder: i,
