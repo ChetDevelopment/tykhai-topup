@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
 
     // Banlist: block orders from flagged emails, phones, IPs or UIDs.
     const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-    const encryptedIp = encryptField(ipAddress);
+    const userAgent = req.headers.get("user-agent") ?? "unknown";
     const banCandidates = [
       { type: "email", value: data.customerEmail?.toLowerCase() },
       { type: "phone", value: data.customerPhone?.toLowerCase() },
@@ -124,6 +124,8 @@ export async function POST(req: NextRequest) {
     if (game.requiresServer && !data.serverId) {
       return NextResponse.json({ error: "Server is required for this game" }, { status: 400 });
     }
+
+    const exchangeRate = settings?.exchangeRate ?? 4100;
 
     // Create the order
     const orderNumber = generateOrderNumber();
