@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateCsrfToken as genToken, validateCsrfToken, checkCsrfProtection } from "./csrf-protection";
+import { generateCsrfToken as genToken, validateCsrfToken, checkCsrfProtection, getCsrfTokenForClient } from "./csrf-protection";
 
 const HEADER_NAME = "x-csrf-token";
 
