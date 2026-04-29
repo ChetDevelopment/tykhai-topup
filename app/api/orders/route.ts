@@ -38,16 +38,17 @@ export async function POST(req: NextRequest) {
   const rateLimitResult = await orderRateLimit(req);
   if (rateLimitResult) return rateLimitResult;
 
-  try {
-    const body = await req.json();
-    const parsed = createOrderSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
-    const data = parsed.data;
+    try {
+      const body = await req.json();
+      const parsed = createOrderSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: "Invalid request", details: parsed.error.flatten() },
+          { status: 400 }
+        );
+      }
+      const data = parsed.data;
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
     if (data.customerEmail) {
       const emailValid = await isRealEmail(data.customerEmail);
@@ -130,7 +131,6 @@ export async function POST(req: NextRequest) {
     // Create the order
     const orderNumber = generateOrderNumber();
     const user = await getCurrentUser();
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
     const idempotencyKey = req.headers.get("x-idempotency-key") || data.idempotencyKey;
     const idempotencyHash = idempotencyKey
       ? hashSha256(idempotencyKey).slice(0, 64)
