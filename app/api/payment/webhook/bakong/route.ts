@@ -104,9 +104,9 @@ export async function POST(req: NextRequest) {
         ? (order.amountKhr ?? order.amountUsd * exchangeRate)
         : order.amountUsd;
 
-      // Strict amount checking - no tolerance for KHR (exact match)
-      // Small tolerance for USD due to potential floating point issues
-      const tolerance = order.currency === "KHR" ? 0 : 0.01;
+      // STRICT amount checking - NO tolerance (exact match required)
+      // For USD, use 1 cent tolerance max
+      const tolerance = order.currency === "KHR" ? 0 : 0.001; // Max 0.1 cent tolerance
 
       if (Math.abs(paidAmount - expectedAmount) > tolerance) {
         console.error(`[bakong-webhook] Amount mismatch! Paid: ${paidAmount}, Expected: ${expectedAmount}, Currency: ${order.currency}`);

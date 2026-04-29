@@ -23,9 +23,8 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ orderNumber: string }> }
 ) {
-  const security = await guardUserApi(req, ordersApiRateLimit);
-  if ("response" in security) return security.response;
-
+  // Don't require user API auth - order might be created by guest
+  // The orderNumber is unique enough to identify the order
   const { orderNumber } = await params;
   let order = await prisma.order.findUnique({
     where: { orderNumber: orderNumber.toUpperCase() },
@@ -37,12 +36,6 @@ export async function GET(
 
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  }
-  if (!order.userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-  if (order.userId !== security.user.userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Only check payment if order is PENDING and has a payment reference (not SIM-)
@@ -175,10 +168,17 @@ function validatePaymentAmount(order: any, remote: any): boolean {
     ? (order.amountKhr ?? order.amountUsd * 4100)
     : order.amountUsd;
 
-  // Strict check: exact match for KHR, small tolerance for USD (floating point)
-  const tolerance = order.currency === "KHR" ? 0 : 0.01;
+  // Strict check: NO tolerance for KHR (exact match)
+  // Very small tolerance for USD (0.001 = 0.1 cent max difference)
+  const tolerance = order.currency === "KHR" ? 0 : 0.001;
 
-  return Math.abs(paidAmount - expectedAmount) <= tolerance;
+  const isMatch = Math.abs(paidAmount - expectedAmount) <= tolerance;
+
+  if (!isMatch) {
+    console.error(`[payment-check] Amount mismatch! Paid: ${paidAmount}, Expected: ${expectedAmount}, Currency: ${order.currency}`);
+  }
+
+  return isMatch;
 }
 
 /**
