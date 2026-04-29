@@ -1,14 +1,24 @@
-import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
+
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
-import { updateUserTotalSpent } from "@/lib/auth";
+/**
+ * Payment simulation is DISABLED in production.
+ * This endpoint should never be used for real orders.
+ */
+export async function GET(req: NextRequest) {
+  return NextResponse.json(
+    { error: "Payment simulation is disabled in production" },
+    { status: 403 }
+  );
+}
 
-async function simulatePayment(req: NextRequest) {
-  // Completely disable in production
-  if (process.env.NODE_ENV === "production") {
-    return new NextResponse('Not Found', { status: 404 });
-  }
+export async function POST(req: NextRequest) {
+  return NextResponse.json(
+    { error: "Payment simulation is disabled in production" },
+    { status: 403 }
+  );
+}
 
   // Also check if explicitly disabled
   if (process.env.ENABLE_PAYMENT_SIMULATION !== "true") {

@@ -38,14 +38,19 @@ const BAKONG_TOKEN = process.env.BAKONG_TOKEN || "";
 export async function initiatePayment(
   args: InitiatePaymentArgs
 ): Promise<PaymentInitResult> {
+  // Only use real payment methods - NO simulation fallback
   if (args.method === "BAKONG" && BAKONG_TOKEN) return initiateBakong(args);
-  
-  if (SIM_MODE) return simulatePayment(args);
+
+  // GamesDrop removed - was causing issues
+  // if (args.method === "GAMESDROP") return initiateGamesDrop(args);
+
   if (args.method === "TRUEMONEY") return initiateTrueMoney(args);
   if (args.method === "WING") return initiateWing(args);
   if (args.method === "BANK") return initiateBankTransfer(args);
   if (args.method === "USDT") return initiateUsdt(args);
-  throw new Error(`Unsupported payment method: ${args.method}`);
+
+  // NEVER fall through to simulation
+  throw new Error(`Unsupported payment method: ${args.method}. Simulation disabled.`);
 }
 
 function simulatePayment(args: InitiatePaymentArgs): PaymentInitResult {
