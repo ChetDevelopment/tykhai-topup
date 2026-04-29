@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -15,68 +16,71 @@ const bulkPricingSchema = z.object({
 
 function applyRounding(price: number, rounding: string): number {
   if (rounding === "none") return Math.round(price * 100) / 100;
-  
+
   const integerPart = Math.floor(price);
   if (rounding === "99") return integerPart + 0.99;
   if (rounding === "95") return integerPart + 0.95;
   if (rounding === "00") return Math.round(price);
-  
+
   return price;
 }
 
 export async function POST(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   try {
     const body = await req.json().catch(() => ({}));
     const parsed = bulkPricingSchema.safeParse(body);
-    
+
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid data", details: parsed.error }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid data", details: parsed.error.flatten() },
+        { status: 400 }
+      );
     }
 
     const { gameId, value, type, direction, targetFields, rounding } = parsed.data;
-
-    // Get all products for this game
     const products = await prisma.product.findMany({
-      where: { gameId }
+      where: { gameId },
     });
 
-    const updates = products.map(p => {
-      const data: any = {};
-      
-      targetFields.forEach(field => {
-        const currentPrice = (p as any)[field];
-        if (currentPrice === null || currentPrice === undefined) return;
+    const updates = products.flatMap((product) => {
+        const data: Record<string, number> = {};
 
-        let newPrice: number;
-        if (type === "percentage") {
-          const factor = direction === "up" ? (1 + value/100) : (1 - value/100);
-          newPrice = currentPrice * factor;
-        } else {
-          newPrice = direction === "up" ? (currentPrice + value) : (currentPrice - value);
-        }
+        targetFields.forEach((field) => {
+          const currentPrice = product[field];
+          if (currentPrice === null || currentPrice === undefined) return;
 
-        // Ensure price doesn't go below 0.01
-        newPrice = Math.max(0.01, newPrice);
-        
-        // Apply rounding
-        data[field] = applyRounding(newPrice, rounding);
+          let newPrice: number;
+          if (type === "percentage") {
+            const factor = direction === "up" ? 1 + value / 100 : 1 - value / 100;
+            newPrice = currentPrice * factor;
+          } else {
+            newPrice = direction === "up" ? currentPrice + value : currentPrice - value;
+          }
+
+          newPrice = Math.max(0.01, newPrice);
+          data[field] = applyRounding(newPrice, rounding);
+        });
+
+        if (Object.keys(data).length === 0) return [];
+
+        return [
+          prisma.product.update({
+            where: { id: product.id },
+            data,
+          }),
+        ];
       });
-
-      if (Object.keys(data).length === 0) return null;
-
-      return prisma.product.update({
-        where: { id: p.id },
-        data
-      });
-    }).filter(Boolean) as any[];
 
     if (updates.length > 0) {
       await prisma.$transaction(updates);
     }
 
     return NextResponse.json({ ok: true, updatedCount: updates.length });
-  } catch (err) {
-    console.error("[bulk-pricing] error:", err);
+  } catch (error) {
+    console.error("[bulk-pricing] error:", error);
     return NextResponse.json({ error: "Operation failed" }, { status: 500 });
   }
 }

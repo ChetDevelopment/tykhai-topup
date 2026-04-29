@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { writeAudit } from "@/lib/audit";
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -15,6 +16,9 @@ const schema = z.object({
  * lineup without a drag-drop library.
  */
 export async function POST(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const body = await req.json().catch(() => ({}));
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid" }, { status: 400 });
@@ -22,7 +26,7 @@ export async function POST(req: NextRequest) {
   const all = await prisma.game.findMany({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
-  const idx = all.findIndex((g) => g.id === parsed.data.id);
+  const idx = all.findIndex((game) => game.id === parsed.data.id);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const swapIdx = parsed.data.direction === "up" ? idx - 1 : idx + 1;
@@ -40,8 +44,11 @@ export async function POST(req: NextRequest) {
   // Normalize if both had the same sortOrder (happens with defaults of 0).
   if (a.sortOrder === b.sortOrder) {
     await prisma.$transaction(
-      all.map((g, i) =>
-        prisma.game.update({ where: { id: g.id }, data: { sortOrder: i * 10 } })
+      all.map((game, index) =>
+        prisma.game.update({
+          where: { id: game.id },
+          data: { sortOrder: index * 10 },
+        })
       )
     );
   }
@@ -55,4 +62,3 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
-

@@ -7,6 +7,13 @@ import { getCurrentUser, updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isRealEmail } from "@/lib/email-validator";
+import { checkIPBlock, rateLimit } from "@/lib/rate-limit";
+import { encryptField, hashSha256 } from "@/lib/encryption";
+
+const orderRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  maxRequests: 10, // 10 orders per minute per IP
+});
 
 const createOrderSchema = z.object({
   gameId: z.string().min(1),
@@ -20,19 +27,28 @@ const createOrderSchema = z.object({
   promoCode: z.string().optional(),
   playerNickname: z.string().max(100).optional(),
   usePoints: z.number().min(0).optional().default(0),
+  idempotencyKey: z.string().min(8).max(128).optional(),
 });
 
 export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const parsed = createOrderSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parsed.error.flatten() },
-        { status: 400 }
-      );
-    }
-    const data = parsed.data;
+  const ipBlocked = checkIPBlock(req);
+  if (ipBlocked) return ipBlocked;
+
+  // Apply rate limiting
+  const rateLimitResult = await orderRateLimit(req);
+  if (rateLimitResult) return rateLimitResult;
+
+    try {
+      const body = await req.json();
+      const parsed = createOrderSchema.safeParse(body);
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: "Invalid request", details: parsed.error.flatten() },
+          { status: 400 }
+        );
+      }
+      const data = parsed.data;
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
     if (data.customerEmail) {
       const emailValid = await isRealEmail(data.customerEmail);
@@ -59,6 +75,7 @@ export async function POST(req: NextRequest) {
 
     // Banlist: block orders from flagged emails, phones, IPs or UIDs.
     const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    const userAgent = req.headers.get("user-agent") ?? "unknown";
     const banCandidates = [
       { type: "email", value: data.customerEmail?.toLowerCase() },
       { type: "phone", value: data.customerPhone?.toLowerCase() },
@@ -75,6 +92,20 @@ export async function POST(req: NextRequest) {
           { error: "This order cannot be processed. Contact support if you believe this is a mistake." },
           { status: 403 }
         );
+      }
+    }
+
+    // Idempotency check
+    if (data.idempotencyKey) {
+      const existingOrder = await prisma.order.findFirst({
+        where: { paymentRef: data.idempotencyKey }
+      });
+      if (existingOrder) {
+        return NextResponse.json({
+          orderNumber: existingOrder.orderNumber,
+          duplicate: true,
+          redirectUrl: `${baseUrl}/order?number=${existingOrder.orderNumber}`
+        });
       }
     }
 
@@ -95,11 +126,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Server is required for this game" }, { status: 400 });
     }
 
+    const exchangeRate = settings?.exchangeRate ?? 4100;
+
     // Create the order
     const orderNumber = generateOrderNumber();
-    const userAgent = req.headers.get("user-agent") ?? "unknown";
-    const exchangeRate = settings?.exchangeRate ?? 4100;
     const user = await getCurrentUser();
+    const idempotencyKey = req.headers.get("x-idempotency-key") || data.idempotencyKey;
+    const idempotencyHash = idempotencyKey
+      ? hashSha256(idempotencyKey).slice(0, 64)
+      : null;
+
+    if (data.paymentMethod === "WALLET" && !user) {
+      return NextResponse.json(
+        { error: "Please login to use wallet payment" },
+        { status: 400 }
+      );
+    }
+
+    if (idempotencyHash) {
+      const existing = await prisma.order.findFirst({
+        where: {
+          OR: [{ paymentRefEnc: idempotencyHash }, { paymentRef: idempotencyHash }],
+        },
+      });
+
+      if (existing) {
+        const redirectUrl =
+          existing.status === "PENDING"
+            ? `${baseUrl}/checkout/${existing.orderNumber}`
+            : `${baseUrl}/order?number=${existing.orderNumber}`;
+
+        return NextResponse.json({
+          orderNumber: existing.orderNumber,
+          duplicate: true,
+          redirectUrl,
+        });
+      }
+    }
 
     // Promo code handling
     let promoCodeId: string | null = null;
@@ -176,7 +239,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    // Encrypt sensitive data before storing
+    const encryptedEmail = encryptField(data.customerEmail);
+    const encryptedPhone = encryptField(data.customerPhone);
+    const encryptedIp = encryptField(ipAddress);
 
     const order = await prisma.order.create({
       data: {
@@ -186,15 +252,16 @@ export async function POST(req: NextRequest) {
         playerUid: data.playerUid,
         serverId: data.serverId,
         playerNickname: data.playerNickname,
-        customerEmail: data.customerEmail,
-        customerPhone: data.customerPhone,
+        customerEmail: encryptedEmail, // Encrypted
+        customerPhone: encryptedPhone, // Encrypted
         amountUsd: finalPrice,
         amountKhr: calcKhr(finalPrice, exchangeRate),
         currency: data.currency,
         paymentMethod: data.paymentMethod,
         status: walletDeducted ? "PAID" : "PENDING",
-        ipAddress,
+        ipAddress: encryptedIp, // Encrypted for privacy
         userAgent,
+        paymentRefEnc: idempotencyHash,
         promoCodeId,
         discountUsd,
         pointsUsed,
@@ -247,7 +314,7 @@ export async function POST(req: NextRequest) {
       amountUsd: order.amountUsd,
       amountKhr: order.amountKhr,
       currency: order.currency as PaymentCurrency,
-      method: "BAKONG",
+      method: data.paymentMethod,
       returnUrl: `${publicUrl}/order?number=${order.orderNumber}`,
       cancelUrl: `${publicUrl}/games/${game.slug}`,
       callbackUrl: `${publicUrl}/api/payment/webhook/bakong`,

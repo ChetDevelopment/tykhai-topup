@@ -1,51 +1,54 @@
-import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { guardUserApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const session = await getCurrentUser();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
-  const [user, orders, savedUids] = await Promise.all([
+  const { user } = security;
+  const [userRecord, orders, savedUids] = await Promise.all([
     prisma.user.findUnique({
-      where: { id: session.userId },
-      select: { 
-        id: true, 
-        email: true, 
-        name: true, 
+      where: { id: user.userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
         image: true,
-        vipRank: true, 
-        totalSpentUsd: true, 
+        vipRank: true,
+        totalSpentUsd: true,
         pointsBalance: true,
         createdAt: true,
-        orders: { select: { amountUsd: true } }
-      }
+        orders: { select: { amountUsd: true } },
+      },
     }),
     prisma.order.findMany({
-      where: { userId: session.userId },
+      where: { userId: user.userId },
       orderBy: { createdAt: "desc" },
       include: {
         game: { select: { name: true, imageUrl: true } },
-        product: { select: { name: true } }
-      }
+        product: { select: { name: true } },
+      },
     }),
     prisma.savedUid.findMany({
-      where: { userId: session.userId },
+      where: { userId: user.userId },
       include: {
-        game: { select: { name: true, imageUrl: true } }
-      }
-    })
+        game: { select: { name: true, imageUrl: true } },
+      },
+    }),
   ]);
+
+  if (!userRecord) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
 
   const totalSpentCalculated = orders.reduce((sum, order) => sum + order.amountUsd, 0);
 
-  return NextResponse.json({ 
-    user: { ...user, totalSpentUsd: totalSpentCalculated }, 
-    orders, 
-    savedUids 
+  return NextResponse.json({
+    user: { ...userRecord, totalSpentUsd: totalSpentCalculated },
+    orders,
+    savedUids,
   });
 }

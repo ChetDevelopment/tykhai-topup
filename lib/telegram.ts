@@ -1,4 +1,9 @@
 import { prisma } from "./prisma";
+import { decryptField } from "./encryption";
+
+function readSecret(value: string | null | undefined): string {
+  return decryptField(value) ?? value ?? "";
+}
 
 /**
  * Send a Telegram message using the bot token + chat id stored in Settings
@@ -10,8 +15,14 @@ export async function notifyTelegram(text: string): Promise<boolean> {
       .findUnique({ where: { id: 1 } })
       .catch(() => null);
 
-    const token = settings?.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN || "";
-    const chatId = settings?.telegramChatId || process.env.TELEGRAM_CHAT_ID || "";
+    const token =
+      readSecret(settings?.telegramBotToken) ||
+      process.env.TELEGRAM_BOT_TOKEN ||
+      "";
+    const chatId =
+      readSecret(settings?.telegramChatId) ||
+      process.env.TELEGRAM_CHAT_ID ||
+      "";
 
     if (!token || !chatId) return false;
 

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth";
+import { guardAdminApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 
 export async function POST(req: NextRequest) {
-  const admin = await requireAdmin();
-  
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const body = await req.json().catch(() => ({}));
   const { userId, amount } = body;
 
@@ -22,15 +23,15 @@ export async function POST(req: NextRequest) {
     where: { id: userId },
     data: {
       walletBalance: { increment: amount },
-      referralEarnings: { increment: amount }
-    }
+      referralEarnings: { increment: amount },
+    },
   });
 
   await writeAudit({
     action: "referral.payout",
     targetType: "user",
     targetId: userId,
-    details: JSON.stringify({ amount, admin: admin.email })
+    details: JSON.stringify({ amount, admin: security.admin.email }),
   });
 
   return NextResponse.json({ success: true, newBalance: user.walletBalance + amount });

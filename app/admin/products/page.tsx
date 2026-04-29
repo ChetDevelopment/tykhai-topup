@@ -6,7 +6,7 @@ import { Plus, Gem, Pencil, Trash2 } from "lucide-react";
 
 export default function AdminProductsPage() {
   const searchParams = useSearchParams();
-  const gameIdFilter = searchParams.get("gameId") || "";
+  const gameIdFilter = searchParams?.get("gameId") || "";
 
   const [games, setGames] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);

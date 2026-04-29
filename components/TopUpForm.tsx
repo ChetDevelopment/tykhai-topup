@@ -48,7 +48,7 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
   const [serverId, setServerId] = useState(
     ZONE_ID_SLUGS.has(game.slug) ? "" : (game.servers[0] ?? "")
   );
-  const [method, setMethod] = useState<"BAKONG">("BAKONG");
+  const [method, setMethod] = useState<"BAKONG" | "WALLET">("BAKONG");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -518,7 +518,7 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
             {user && (user.walletBalance > 0 || user.pointsBalance > 0) && (
               <button
                 type="button"
-                onClick={() => setWalletActive(!walletActive)}
+                onClick={() => { setWalletActive(!walletActive); setMethod(walletActive ? "BAKONG" : "WALLET"); }}
                 className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full mb-3 ${
                   walletActive
                     ? "border-royal-accent bg-gradient-to-br from-royal-accent/15 to-royal-gold/5 shadow-lg shadow-royal-accent/20"
@@ -552,13 +552,19 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
                   <span className="text-xs text-royal-muted">Max: {user?.pointsBalance || 0} pts</span>
                 </div>
                 <input
-                  type="number"
-                  value={pointsInput}
-                  onChange={(e) => setPointsInput(e.target.value)}
-                  placeholder="Enter points to redeem"
-                  className="input font-mono text-sm"
-                  max={user?.pointsBalance || 0}
-                />
+                   type="number"
+                   value={pointsInput}
+                   onChange={(e) => {
+                     const val = parseInt(e.target.value);
+                     if (val < 0) return;
+                     setPointsInput(e.target.value);
+                   }}
+                   placeholder="Enter points to redeem"
+                   className="input font-mono text-sm"
+                   min={0}
+                   max={user?.pointsBalance || 0}
+                   step={1}
+                 />
                 {pointsInput && Number(pointsInput) > 0 && (
                   <div className="mt-2 text-xs text-royal-accent font-bold">
                     −${(Number(pointsInput) / 100).toFixed(2)} discount
@@ -567,15 +573,15 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => { setMethod("BAKONG"); setWalletActive(false); }}
-              className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full ${
-                method === "BAKONG"
-                  ? "border-royal-primary bg-gradient-to-br from-royal-primary/15 to-royal-accent/5 shadow-lg shadow-royal-primary/20"
-                  : "border-royal-border bg-royal-card hover:border-royal-primary/50"
-              }`}
-            >
+             <button
+               type="button"
+               onClick={() => { setMethod("BAKONG"); setWalletActive(false); }}
+               className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full ${
+                 !walletActive
+                   ? "border-royal-primary bg-gradient-to-br from-royal-primary/15 to-royal-accent/5 shadow-lg shadow-royal-primary/20"
+                   : "border-royal-border bg-royal-card hover:border-royal-primary/50"
+               }`}
+             >
               <div className="flex items-center gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-royal-primary/20 to-royal-accent/10 border border-royal-primary/30 text-royal-primary transition-transform group-hover:scale-110">
                   <QrCode className="h-6 w-6" strokeWidth={2} />

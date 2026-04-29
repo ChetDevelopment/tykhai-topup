@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import PDFDocument from "pdfkit";
+import { decryptField } from "@/lib/encryption";
+import { guardUserApi, ordersApiRateLimit } from "@/lib/api-security";
 
 // pdfkit needs the Node runtime (fs, Buffer); it will not work on edge.
 export const runtime = "nodejs";
@@ -338,11 +340,15 @@ function renderPdf(order: {
 }
 
 export async function GET(
-  _req: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  req: NextRequest,
+  { params }: { params: Promise<{ orderNumber: string }> }
 ) {
+  const security = await guardUserApi(req, ordersApiRateLimit);
+  if ("response" in security) return security.response;
+
+  const { orderNumber } = await params;
   const order = await prisma.order.findUnique({
-    where: { orderNumber: params.orderNumber.toUpperCase() },
+    where: { orderNumber: orderNumber.toUpperCase() },
     include: {
       game: { select: { name: true, publisher: true, currencyName: true } },
       product: { select: { name: true, amount: true, bonus: true, priceUsd: true } },
@@ -352,6 +358,12 @@ export async function GET(
   if (!order) {
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
+  if (!order.userId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (order.userId !== security.user.userId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   if (!INVOICEABLE_STATUSES.has(order.status)) {
     return NextResponse.json(
       { error: "Invoice is only available after payment is confirmed." },
@@ -359,7 +371,11 @@ export async function GET(
     );
   }
 
-  const pdf = await renderPdf(order);
+  const pdf = await renderPdf({
+    ...order,
+    customerEmail: decryptField(order.customerEmail) ?? order.customerEmail,
+    customerPhone: decryptField(order.customerPhone) ?? order.customerPhone,
+  });
 
   return new NextResponse(new Uint8Array(pdf), {
     status: 200,

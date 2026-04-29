@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { guardUserApi } from "@/lib/api-security";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -13,27 +13,23 @@ const pushSchema = z.object({
   }),
 });
 
-export async function GET() {
-  const session = await getCurrentUser();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
-  let user = await prisma.user.findUnique({
-    where: { id: session.userId },
-    select: { pushSubscription: true }
+  const user = await prisma.user.findUnique({
+    where: { id: security.user.userId },
+    select: { pushSubscription: true },
   });
 
-  return NextResponse.json({ 
-    subscription: user?.pushSubscription ? JSON.parse(user.pushSubscription) : null 
+  return NextResponse.json({
+    subscription: user?.pushSubscription ? JSON.parse(user.pushSubscription) : null,
   });
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getCurrentUser();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
   const body = await req.json().catch(() => ({}));
   const parsed = pushSchema.safeParse(body);
@@ -41,25 +37,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid subscription" }, { status: 400 });
   }
 
-  const subscriptionJson = JSON.stringify(parsed.data.subscription);
-
   await prisma.user.update({
-    where: { id: session.userId },
-    data: { pushSubscription: subscriptionJson }
+    where: { id: security.user.userId },
+    data: { pushSubscription: JSON.stringify(parsed.data.subscription) },
   });
 
   return NextResponse.json({ success: true });
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await getCurrentUser();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const security = await guardUserApi(req);
+  if ("response" in security) return security.response;
 
   await prisma.user.update({
-    where: { id: session.userId },
-    data: { pushSubscription: null }
+    where: { id: security.user.userId },
+    data: { pushSubscription: null },
   });
 
   return NextResponse.json({ success: true });

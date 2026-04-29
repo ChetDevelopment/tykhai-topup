@@ -18,20 +18,24 @@ interface HomePopupProps {
 export default function HomePopup({ settings, forceShow, onClose }: HomePopupProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  useEffect(() => {
+useEffect(() => {
     if (!settings?.popupActive && !forceShow) return;
     if (forceShow) {
       setIsOpen(true);
       return;
     }
 
-    const popupKey = "home_popup_seen";
+    const popupKey = "home_popup_closed";
     const lastUpdate = settings?.updatedAt ? new Date(settings.updatedAt).getTime().toString() : "0";
-    const seenData = localStorage.getItem(popupKey);
-
-    // Show if never seen OR if settings were updated since last seen
-    if (seenData !== lastUpdate) {
-      const timer = setTimeout(() => setIsOpen(true), 1500); // Small delay for better UX
+    
+    // Show popup on every page refresh - use sessionStorage so it resets on new session
+    // User closes popup -> stores lastUpdate -> next refresh shows again if active
+    // Unless admin just disabled popup (different flow)
+    const seenData = sessionStorage.getItem(popupKey);
+    
+    // Show if never closed this session OR if settings were updated since last close
+    if (!seenData || seenData !== lastUpdate) {
+      const timer = setTimeout(() => setIsOpen(true), 1500);
       return () => clearTimeout(timer);
     }
   }, [settings, forceShow]);
@@ -39,8 +43,8 @@ export default function HomePopup({ settings, forceShow, onClose }: HomePopupPro
   const closePopup = () => {
     setIsOpen(false);
     if (onClose) onClose();
-    const lastUpdate = settings?.updatedAt ? new Date(settings.updatedAt).getTime().toString() : "0";
-    localStorage.setItem("home_popup_seen", lastUpdate);
+    // Store timestamp when closed - next refresh will show popup again
+    sessionStorage.setItem("home_popup_closed", Date.now().toString());
   };
 
   if (!isOpen || !settings) return null;

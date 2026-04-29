@@ -1,15 +1,18 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-// Accept either a full http(s) URL or a local uploaded path like /uploads/xxx.png
 const imagePath = z
   .string()
   .min(1)
   .refine(
-    (v) => /^https?:\/\//i.test(v) || v.startsWith("/uploads/") || v.startsWith("/"),
+    (value) =>
+      /^https?:\/\//i.test(value) ||
+      value.startsWith("/uploads/") ||
+      value.startsWith("/"),
     { message: "Must be a URL or uploaded file path" }
   );
 
@@ -30,7 +33,10 @@ const gameSchema = z.object({
   sortOrder: z.number().int().default(0),
 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const games = await prisma.game.findMany({
     orderBy: { sortOrder: "asc" },
     include: { _count: { select: { products: true, orders: true } } },
@@ -39,6 +45,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const body = await req.json().catch(() => ({}));
   const parsed = gameSchema.safeParse(body);
   if (!parsed.success) {
@@ -51,11 +60,11 @@ export async function POST(req: NextRequest) {
   try {
     const game = await prisma.game.create({ data: parsed.data });
     return NextResponse.json(game);
-  } catch (err: any) {
-    if (err.code === "P2002") {
+  } catch (err: unknown) {
+    const error = err as { code?: string };
+    if (error.code === "P2002") {
       return NextResponse.json({ error: "Slug already exists" }, { status: 409 });
     }
     throw err;
   }
 }
-

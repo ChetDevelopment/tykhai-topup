@@ -1,14 +1,19 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from "next/server";
+import { guardAdminApi } from "@/lib/api-security";
+import { decryptField } from "@/lib/encryption";
+import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Aggregated customer list. Groups orders by customerEmail or customerPhone
  * (whichever is present) and returns lifetime value + order counts.
  */
-export async function GET() {
-  // Pull raw orders (bounded) and aggregate in memory — SQLite friendly.
+export async function GET(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
+  // Pull raw orders (bounded) and aggregate in memory.
   const orders = await prisma.order.findMany({
     take: 5000,
     orderBy: { createdAt: "desc" },
@@ -36,43 +41,46 @@ export async function GET() {
     }
   >();
 
-  for (const o of orders) {
-    const key = o.customerEmail || o.customerPhone || `uid:${o.playerUid}`;
+  for (const order of orders) {
+    const email = decryptField(order.customerEmail) ?? order.customerEmail;
+    const phone = decryptField(order.customerPhone) ?? order.customerPhone;
+    const key = email || phone || `uid:${order.playerUid}`;
     const existing = map.get(key);
-    const isPaid = ["PAID", "PROCESSING", "DELIVERED"].includes(o.status);
+    const isPaid = ["PAID", "PROCESSING", "DELIVERED"].includes(order.status);
+
     if (existing) {
       existing.totalOrders += 1;
       if (isPaid) existing.paidOrders += 1;
-      if (isPaid) existing.lifetimeUsd += o.amountUsd;
-      if (o.createdAt > existing.lastOrderAt) existing.lastOrderAt = o.createdAt;
-      existing.uids.add(o.playerUid);
-    } else {
-      map.set(key, {
-        key,
-        email: o.customerEmail,
-        phone: o.customerPhone,
-        totalOrders: 1,
-        paidOrders: isPaid ? 1 : 0,
-        lifetimeUsd: isPaid ? o.amountUsd : 0,
-        lastOrderAt: o.createdAt,
-        uids: new Set([o.playerUid]),
-      });
+      if (isPaid) existing.lifetimeUsd += order.amountUsd;
+      if (order.createdAt > existing.lastOrderAt) existing.lastOrderAt = order.createdAt;
+      existing.uids.add(order.playerUid);
+      continue;
     }
+
+    map.set(key, {
+      key,
+      email,
+      phone,
+      totalOrders: 1,
+      paidOrders: isPaid ? 1 : 0,
+      lifetimeUsd: isPaid ? order.amountUsd : 0,
+      lastOrderAt: order.createdAt,
+      uids: new Set([order.playerUid]),
+    });
   }
 
   const customers = [...map.values()]
-    .map((c) => ({
-      key: c.key,
-      email: c.email,
-      phone: c.phone,
-      totalOrders: c.totalOrders,
-      paidOrders: c.paidOrders,
-      lifetimeUsd: Math.round(c.lifetimeUsd * 100) / 100,
-      lastOrderAt: c.lastOrderAt,
-      uidCount: c.uids.size,
+    .map((customer) => ({
+      key: customer.key,
+      email: customer.email,
+      phone: customer.phone,
+      totalOrders: customer.totalOrders,
+      paidOrders: customer.paidOrders,
+      lifetimeUsd: Math.round(customer.lifetimeUsd * 100) / 100,
+      lastOrderAt: customer.lastOrderAt,
+      uidCount: customer.uids.size,
     }))
     .sort((a, b) => b.lifetimeUsd - a.lifetimeUsd);
 
   return NextResponse.json({ customers, total: customers.length });
 }
-

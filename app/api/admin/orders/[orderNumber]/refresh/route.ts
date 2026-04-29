@@ -1,21 +1,26 @@
-﻿import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { writeAudit } from "@/lib/audit";
+import { guardAdminApi } from "@/lib/api-security";
 import { checkBakongPayment } from "@/lib/payment";
 import { updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Admin debug endpoint: pulls the latest Bakong status for an order
- * and, if paid, flips the order to PAID.
+ * and, if paid, flips the order to DELIVERED (after verifying amount).
  */
 export async function POST(
-  _req: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  req: NextRequest,
+  { params }: { params: Promise<{ orderNumber: string }> }
 ) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
+  const { orderNumber } = await params;
   const order = await prisma.order.findUnique({
-    where: { orderNumber: params.orderNumber },
+    where: { orderNumber: orderNumber },
   });
   if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -26,23 +31,74 @@ export async function POST(
   const remote = await checkBakongPayment(order.paymentRef);
 
   let updated = order;
+
+  // Verify payment and amount
   if (remote && remote.paid && order.status === "PENDING") {
+    // AMOUNT VERIFICATION
+    if (remote.amount) {
+      const paidAmount = parseFloat(remote.amount);
+
+      // Get dynamic exchange rate from Settings
+      const settings = await prisma.settings.findFirst();
+      const exchangeRate = settings?.exchangeRate ?? 4100;
+
+      const expectedAmount = order.currency === "KHR"
+        ? (order.amountKhr ?? order.amountUsd * exchangeRate)
+        : order.amountUsd;
+
+      const tolerance = order.currency === "KHR" ? 0 : 0.01;
+
+      if (Math.abs(paidAmount - expectedAmount) > tolerance) {
+        await writeAudit({
+          action: "order.bakong_refresh.amount_mismatch",
+          targetType: "order",
+          targetId: order.id,
+          details: {
+            paymentRef: order.paymentRef,
+            expectedAmount,
+            paidAmount,
+            currency: order.currency,
+          },
+        });
+
+        return NextResponse.json({
+          error: "Amount mismatch",
+          expectedAmount,
+          paidAmount,
+          remote,
+        }, { status: 400 });
+      }
+    }
+
+    // RECEIVER VERIFICATION (if returned by checkBakongPayment)
+    if (remote.receiverAccount && remote.receiverAccount !== process.env.BAKONG_ACCOUNT) {
+      return NextResponse.json({
+        error: "Payment sent to wrong account",
+        expectedAccount: process.env.BAKONG_ACCOUNT,
+        receiverAccount: remote.receiverAccount,
+      }, { status: 400 });
+    }
+
     updated = await prisma.order.update({
       where: { id: order.id },
-      data: { status: "PAID", paidAt: new Date() },
+      data: {
+        status: "DELIVERED",
+        paidAt: new Date(),
+        deliveredAt: new Date(),
+      },
     });
     if (order.userId) {
       await updateUserTotalSpent(order.userId, order.amountUsd);
     }
     await writeAudit({
-      action: "order.bakong_refresh.auto_paid",
+      action: "order.bakong_refresh.auto_delivered",
       targetType: "order",
       targetId: order.id,
       details: { paymentRef: order.paymentRef, remote },
     });
   } else if (
     remote &&
-    (remote.status === "expired" || remote.status === "failed") &&
+    (remote.status === "expired" || remote.status === "failed" || remote.status === "UNPAID") &&
     order.status === "PENDING"
   ) {
     updated = await prisma.order.update({
@@ -64,8 +120,8 @@ export async function POST(
     details: { paymentRef: order.paymentRef, remote, expectedAmount: order.amountUsd },
   });
 
-  return NextResponse.json({ 
-    remote, 
+  return NextResponse.json({
+    remote,
     order: updated,
     expectedAmount: order.amountUsd,
     paidAmount: remote?.amount,

@@ -17,7 +17,8 @@ import {
   Settings,
   ShieldCheck,
   Package,
-  Store
+  Store,
+  Megaphone
 } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 
@@ -41,6 +42,7 @@ export default async function AdminLayout({
     { href: "/admin/tools/pricing", label: "Pricing Tool", icon: TrendingUp },
     { href: "/admin/promo-codes", label: "Promo Codes", icon: Ticket },
     { href: "/admin/banners", label: "Banners", icon: ImageIcon },
+    { href: "/admin/popup", label: "Popup", icon: Megaphone },
     { href: "/admin/faqs", label: "FAQ", icon: HelpCircle },
     { href: "/admin/blog", label: "Blog", icon: FileText },
     { href: "/admin/customers", label: "Customers", icon: Users },

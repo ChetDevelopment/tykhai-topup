@@ -1,7 +1,18 @@
-import { NextResponse } from "next/server";
-import { verifyUserCredentials, createUserSession, setUserSessionCookie } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  applyRequestProtections,
+  loginApiRateLimit,
+} from "@/lib/api-security";
+import {
+  verifyUserCredentials,
+  createUserSession,
+  setUserSessionCookie,
+} from "@/lib/auth";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const blocked = await applyRequestProtections(req, loginApiRateLimit);
+  if (blocked) return blocked;
+
   try {
     const { email, password } = await req.json();
 
@@ -13,7 +24,6 @@ export async function POST(req: Request) {
     }
 
     const user = await verifyUserCredentials(email, password);
-
     if (!user) {
       return NextResponse.json(
         { error: "Invalid email or password" },
@@ -21,7 +31,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Create session
     const session = await createUserSession({
       userId: user.userId,
       email: user.email,
@@ -30,7 +39,6 @@ export async function POST(req: Request) {
       vipRank: user.vipRank,
     });
 
-    // Set cookie
     await setUserSessionCookie(session);
 
     return NextResponse.json({
@@ -43,10 +51,10 @@ export async function POST(req: Request) {
         vipRank: user.vipRank,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Login error:", error);
-    // If it's a known error from verifyUserCredentials, we show it
-    const message = error instanceof Error ? error.message : "Invalid email or password";
+    const message =
+      error instanceof Error ? error.message : "Invalid email or password";
     return NextResponse.json(
       { error: message.includes("Unexpected token") ? "Invalid email or password" : message },
       { status: 401 }

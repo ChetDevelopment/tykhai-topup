@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Plus, Trash2, Save, X, Image as ImageIcon, Pencil } from "lucide-react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { Plus, Trash2, Save, X, Image as ImageIcon, Pencil, Crop, RotateCw } from "lucide-react";
+import ReactCrop, { Crop as CropType, centerCrop, makeAspectCrop } from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
 
 interface Banner {
   id: string;
@@ -31,6 +33,82 @@ export default function BannersAdminPage() {
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  // Cropper states
+  const [showCropper, setShowCropper] = useState(false);
+  const [cropImage, setCropImage] = useState<string | null>(null);
+  const [crop, setCrop] = useState<CropType>();
+  const [completedCrop, setCompletedCrop] = useState<CropType>();
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  function centerAspectCrop(mediaWidth: number, mediaHeight: number, aspect: number) {
+    return centerCrop(
+      makeAspectCrop({ unit: "%", width: 90 }, aspect, mediaWidth, mediaHeight),
+      mediaWidth,
+      mediaHeight
+    );
+  }
+
+  function onImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
+    const { width, height } = e.currentTarget;
+    const aspect = 4 / 1; // 16:4 ratio = 1920:480
+    setCrop(centerAspectCrop(width, height, aspect));
+  }
+
+  const getCroppedImage = useCallback(async () => {
+    if (!imgRef.current || !completedCrop) return null;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const scaleX = imgRef.current.naturalWidth / imgRef.current.width;
+    const scaleY = imgRef.current.naturalHeight / imgRef.current.height;
+
+    const cropX = (completedCrop.x / 100) * imgRef.current.width;
+    const cropY = (completedCrop.y / 100) * imgRef.current.height;
+    const cropWidth = (completedCrop.width / 100) * imgRef.current.width;
+    const cropHeight = (completedCrop.height / 100) * imgRef.current.height;
+
+    const targetWidth = 1920;
+    const targetHeight = 480;
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    ctx.drawImage(
+      imgRef.current,
+      cropX * scaleX,
+      cropY * scaleY,
+      cropWidth * scaleX,
+      cropHeight * scaleY,
+      0,
+      0,
+      targetWidth,
+      targetHeight
+    );
+
+    return new Promise<string>((resolve) => {
+      canvas.toBlob((blob) => {
+        if (!blob) return resolve("");
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      }, "image/jpeg", 0.9);
+    });
+  }, [completedCrop]);
+
+  async function applyCrop() {
+    const croppedDataUrl = await getCroppedImage();
+    if (croppedDataUrl) {
+      setForm((f) => ({ ...f, imageUrl: croppedDataUrl }));
+      setShowCropper(false);
+      setCropImage(null);
+    }
+  }
+
+  function openCropModal(dataUrl: string) {
+    setCropImage(dataUrl);
+    setShowCropper(true);
+  }
 
   async function load() {
     setLoading(true);
@@ -63,14 +141,13 @@ export default function BannersAdminPage() {
 
   async function upload(file: File) {
     setUploading(true);
-    const fd = new FormData();
-    fd.append("file", file);
-    const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
-    if (res.ok) {
-      const data = await res.json();
-      setForm((f) => ({ ...f, imageUrl: data.url }));
-    }
-    setUploading(false);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      openCropModal(dataUrl);
+      setUploading(false);
+    };
+    reader.readAsDataURL(file);
   }
 
   async function save() {
@@ -158,9 +235,32 @@ export default function BannersAdminPage() {
                 />
               </label>
             </div>
+            <p className="text-xs text-royal-muted mt-1">Recommended: 1920x480px (16:4 ratio). Image will be cropped to fit.</p>
             {form.imageUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={form.imageUrl} alt="" className="mt-3 h-32 rounded-lg border border-royal-border object-cover" />
+              <>
+                {/* Live Preview - Shows exactly how it looks on site */}
+                <div className="mt-3">
+                  <p className="text-xs font-bold text-royal-muted mb-2">📱 Live Preview (User site):</p>
+                  <div className="relative h-48 sm:h-72 lg:h-80 w-full rounded-lg overflow-hidden border border-royal-border bg-royal-card">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={form.imageUrl} alt="" className="h-full w-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+                    <div className="absolute bottom-0 left-0 right-0 p-4">
+                      <p className="font-display text-lg font-bold text-white drop-shadow">{form.title || "Banner Title"}</p>
+                      {form.subtitle && <p className="text-xs text-white/80 mt-1">{form.subtitle}</p>}
+                      {form.ctaLabel && (
+                        <span className="mt-2 inline-flex items-center gap-1 rounded-lg bg-royal-primary px-3 py-1 text-xs font-semibold text-black">
+                          {form.ctaLabel}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {/* Admin thumbnail */}
+                <p className="text-xs font-bold text-royal-muted mt-3 mb-1">Admin preview:</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={form.imageUrl} alt="" className="h-32 rounded-lg border border-royal-border object-cover w-full" />
+              </>
             )}
           </div>
           <div>
@@ -185,11 +285,64 @@ export default function BannersAdminPage() {
 
         <div className="mt-5 flex gap-2">
           <button onClick={save} disabled={saving || !form.title || !form.imageUrl} className="btn-primary">
-            <Save className="h-4 w-4" /> 
+            <Save className="h-4 w-4" />
             {saving ? "Saving..." : editing ? "Save changes" : "Create banner"}
           </button>
+          {form.imageUrl && (
+            <button
+              type="button"
+              onClick={() => openCropModal(form.imageUrl)}
+              className="btn-ghost"
+            >
+              <Crop className="h-4 w-4" />
+              Recrop Image
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Cropper Modal */}
+      {showCropper && cropImage && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="bg-royal-card rounded-xl p-4 max-w-4xl w-full max-h-[90vh] overflow-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold flex items-center gap-2">
+                <Crop className="h-5 w-5" />
+                Crop Banner Image
+              </h3>
+              <button onClick={() => { setShowCropper(false); setCropImage(null); }} className="text-royal-muted hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm text-royal-muted mb-3">Drag to adjust crop area. Image will be saved at 1920x480px.</p>
+            <div className="max-h-[60vh] overflow-auto">
+              <ReactCrop
+                crop={crop}
+                onChange={(_, pct) => setCrop(pct)}
+                onComplete={(_, pct) => setCompletedCrop(pct)}
+                aspect={4 / 1}
+              >
+                <img
+                  ref={imgRef}
+                  src={cropImage}
+                  alt="Crop preview"
+                  onLoad={onImageLoad}
+                  className="max-h-[60vh] w-auto"
+                />
+              </ReactCrop>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => { setShowCropper(false); setCropImage(null); }} className="btn-ghost">
+                Cancel
+              </button>
+              <button onClick={applyCrop} className="btn-primary">
+                <RotateCw className="h-4 w-4" />
+                Apply Crop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* List */}
       {loading ? (

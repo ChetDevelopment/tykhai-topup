@@ -1,16 +1,20 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const { searchParams } = req.nextUrl;
   const status = searchParams.get("status") || undefined;
   const q = searchParams.get("q")?.trim();
   const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
   const perPage = Math.min(100, parseInt(searchParams.get("perPage") || "25"));
 
-  const where: any = {};
+  const where: Record<string, unknown> = {};
   if (status && status !== "ALL") where.status = status;
   if (q) {
     where.OR = [
@@ -42,4 +46,3 @@ export async function GET(req: NextRequest) {
     totalPages: Math.ceil(total / perPage),
   });
 }
-

@@ -6,6 +6,7 @@ import { notifyTelegram, escapeHtml } from "@/lib/telegram";
 import { updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { logSecurityEvent } from "@/lib/logger";
 
 const updateSchema = z.object({
   status: z.enum([
@@ -22,11 +23,14 @@ const updateSchema = z.object({
 });
 
 export async function GET(
-  _req: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  req: NextRequest,
+  { params }: { params: Promise<{ orderNumber: string }> }
 ) {
+  const { orderNumber } = await params;
+  logSecurityEvent("ACCESS", "Order details viewed", req, { orderNumber });
+
   const order = await prisma.order.findUnique({
-    where: { orderNumber: params.orderNumber },
+    where: { orderNumber },
     include: {
       game: true,
       product: true,
@@ -38,8 +42,9 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  { params }: { params: Promise<{ orderNumber: string }> }
 ) {
+  const { orderNumber } = await params;
   const body = await req.json().catch(() => ({}));
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
@@ -47,19 +52,33 @@ export async function PATCH(
   }
 
   const order = await prisma.order.findUnique({
-    where: { orderNumber: params.orderNumber },
+    where: { orderNumber },
   });
   if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const data: any = { ...parsed.data };
-  if (parsed.data.status === "DELIVERED" && !order.deliveredAt) {
-    data.deliveredAt = new Date();
-  }
+
+  // SECURITY: Prevent manual PAID status without proper verification
   if (parsed.data.status === "PAID" && !order.paidAt) {
+    // Require paymentRef to exist - order must have a payment reference
+    if (!order.paymentRef) {
+      return NextResponse.json(
+        { error: "Cannot mark as PAID: no payment reference found. Process payment first." },
+        { status: 400 }
+      );
+    }
+
+    // Log this manual override for audit
+    logSecurityEvent("SECURITY", `MANUAL_PAID_OVERRIDE: ${order.orderNumber}, amount: ${order.amountUsd} ${order.currency}`, req);
+
     data.paidAt = new Date();
     if (order.userId) {
       await updateUserTotalSpent(order.userId, order.amountUsd);
     }
+  }
+
+  if (parsed.data.status === "DELIVERED" && !order.deliveredAt) {
+    data.deliveredAt = new Date();
   }
 
   const updated = await prisma.order.update({

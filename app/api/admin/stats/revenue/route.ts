@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -8,6 +9,9 @@ import { NextRequest, NextResponse } from "next/server";
  * Returns daily buckets and the top-5 products by revenue.
  */
 export async function GET(req: NextRequest) {
+  const security = await guardAdminApi(req);
+  if ("response" in security) return security.response;
+
   const days = Math.min(365, Math.max(1, parseInt(req.nextUrl.searchParams.get("days") || "30")));
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
@@ -27,9 +31,9 @@ export async function GET(req: NextRequest) {
   });
 
   const buckets = new Map<string, { date: string; count: number; revenue: number }>();
-  for (let i = 0; i < days; i += 1) {
-    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-    const key = d.toISOString().slice(0, 10);
+  for (let index = 0; index < days; index += 1) {
+    const date = new Date(Date.now() - index * 24 * 60 * 60 * 1000);
+    const key = date.toISOString().slice(0, 10);
     buckets.set(key, { date: key, count: 0, revenue: 0 });
   }
 
@@ -37,65 +41,62 @@ export async function GET(req: NextRequest) {
   const hourly = new Array(24).fill(0);
   const userOrderCount = new Map<string, number>();
 
-  for (const o of paid) {
-    if (!o.paidAt) continue;
-    const key = o.paidAt.toISOString().slice(0, 10);
-    const b = buckets.get(key);
-    if (b) {
-      b.count += 1;
-      b.revenue += o.amountUsd;
+  for (const order of paid) {
+    if (!order.paidAt) continue;
+
+    const key = order.paidAt.toISOString().slice(0, 10);
+    const bucket = buckets.get(key);
+    if (bucket) {
+      bucket.count += 1;
+      bucket.revenue += order.amountUsd;
     }
-    
-    // Hourly distribution (adjusted to GMT+7)
-    const hour = (o.paidAt.getUTCHours() + 7) % 24;
+
+    const hour = (order.paidAt.getUTCHours() + 7) % 24;
     hourly[hour] += 1;
 
-    // Retention tracking
-    if (o.userId) {
-      userOrderCount.set(o.userId, (userOrderCount.get(o.userId) || 0) + 1);
+    if (order.userId) {
+      userOrderCount.set(order.userId, (userOrderCount.get(order.userId) || 0) + 1);
     }
 
-    const pk = o.productId;
-    const existing = productAgg.get(pk);
+    const existing = productAgg.get(order.productId);
     if (existing) {
       existing.count += 1;
-      existing.revenue += o.amountUsd;
+      existing.revenue += order.amountUsd;
     } else {
-      productAgg.set(pk, {
-        name: o.product?.name ?? "—",
-        game: o.game?.name ?? "—",
+      productAgg.set(order.productId, {
+        name: order.product?.name ?? "—",
+        game: order.game?.name ?? "—",
         count: 1,
-        revenue: o.amountUsd,
+        revenue: order.amountUsd,
       });
     }
   }
 
-  const returningUsers = Array.from(userOrderCount.values()).filter(count => count > 1).length;
+  const returningUsers = Array.from(userOrderCount.values()).filter((count) => count > 1).length;
   const uniqueUsers = userOrderCount.size;
 
   const daily = [...buckets.values()]
     .sort((a, b) => (a.date < b.date ? -1 : 1))
-    .map((b) => ({ ...b, revenue: Math.round(b.revenue * 100) / 100 }));
+    .map((bucket) => ({ ...bucket, revenue: Math.round(bucket.revenue * 100) / 100 }));
 
   const topProducts = [...productAgg.values()]
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 5)
-    .map((p) => ({ ...p, revenue: Math.round(p.revenue * 100) / 100 }));
+    .map((product) => ({ ...product, revenue: Math.round(product.revenue * 100) / 100 }));
 
-  const totalRevenue = Math.round(paid.reduce((s, o) => s + o.amountUsd, 0) * 100) / 100;
+  const totalRevenue = Math.round(paid.reduce((sum, order) => sum + order.amountUsd, 0) * 100) / 100;
 
-  return NextResponse.json({ 
-    days, 
-    totalRevenue, 
-    totalOrders: paid.length, 
-    daily, 
+  return NextResponse.json({
+    days,
+    totalRevenue,
+    totalOrders: paid.length,
+    daily,
     topProducts,
     retention: {
       returningUsers,
       uniqueUsers,
-      rate: uniqueUsers > 0 ? Math.round((returningUsers / uniqueUsers) * 100) : 0
+      rate: uniqueUsers > 0 ? Math.round((returningUsers / uniqueUsers) * 100) : 0,
     },
-    hourly
+    hourly,
   });
 }
-
