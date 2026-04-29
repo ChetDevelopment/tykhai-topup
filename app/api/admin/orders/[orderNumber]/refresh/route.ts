@@ -13,13 +13,14 @@ import { NextRequest, NextResponse } from "next/server";
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  { params }: { params: Promise<{ orderNumber: string }> }
 ) {
   const security = await guardAdminApi(req);
   if ("response" in security) return security.response;
 
+  const { orderNumber } = await params;
   const order = await prisma.order.findUnique({
-    where: { orderNumber: params.orderNumber },
+    where: { orderNumber: orderNumber },
   });
   if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
