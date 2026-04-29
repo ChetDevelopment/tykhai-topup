@@ -70,7 +70,7 @@ function formatPrimaryAmount(order: Pick<OrderPayment, "amountUsd" | "amountKhr"
 function formatOrderTotal(order: Pick<OrderPayment, "amountUsd" | "amountKhr" | "currency"> | null): string {
   if (!order) return "$0.00";
   return getOrderCurrency(order) === "KHR"
-    ? `${Math.round(order.amountKhr ?? 0).toLocaleString("en-US")} ៛`
+    ? `${Math.round(order.amountKhr ?? 0).toLocaleString("en-US")} ßƒ¢`
     : `$${order.amountUsd.toFixed(2)}`;
 }
 
@@ -80,7 +80,7 @@ function formatSecondaryAmount(order: Pick<OrderPayment, "amountUsd" | "amountKh
     return `Approx. $${order.amountUsd.toFixed(2)}`;
   }
   if (typeof order.amountKhr === "number" && Number.isFinite(order.amountKhr)) {
-    return `Approx. ${Math.round(order.amountKhr ?? 0).toLocaleString("en-US")} ៛`;
+    return `Approx. ${Math.round(order.amountKhr ?? 0).toLocaleString("en-US")} ßƒ¢`;
   }
   return null;
 }
@@ -322,7 +322,7 @@ export default function CheckoutPage() {
                             )}
 
                             <div className="absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-[3px] border-white bg-slate-950 text-2xl font-black text-white shadow-lg">
-                              {paymentCurrency === "KHR" ? "៛" : "$"}
+                              {paymentCurrency === "KHR" ? "ßƒ¢" : "$"}
                             </div>
                           </div>
 
@@ -458,11 +458,10 @@ export default function CheckoutPage() {
                   {simulating ? "SIMULATING..." : "DEBUG: FORCE SYNC PAYMENT"}
                 </button>
 )}
-               </div>
-               </div>
-             )}
-
-             {/* Removed DEBUG button - security risk */}
+             </div>
+           </div>
+         )}
+      </main>
 
       {/* Cancel Modal */}
       {showCancelModal && order && (
