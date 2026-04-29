@@ -135,12 +135,49 @@ export async function checkBakongPayment(paymentRef: string): Promise<{
       console.log("[bakong] Converted MD5 to SHA256 for lookup");
     }
 
+    console.log("[bakong] get_payment:", refToCheck);
+    // Use get_payment instead of check_payment to get transaction details
+    const result = await khqr.get_payment(refToCheck);
+    console.log("[bakong] get_payment result:", result);
+
+    if (!result || !result.data) {
+      return { status: "UNPAID", paid: false };
+    }
+
+    const data = result.data;
+    return {
+      status: data.responseCode === 0 ? "PAID" : "UNPAID",
+      paid: data.responseCode === 0,
+      amount: data.transactionAmount || data.amount,
+      currency: data.transactionCurrency || data.currency,
+    };
+  } catch (e) {
+    console.warn("[bakong] get_payment failed:", e);
+    return null;
+  }
+}
+
+  const khqr = new KHQR(BAKONG_TOKEN, "https://api-bakong.nbc.gov.kh/v1");
+  
+  try {
+    // Convert to SHA256 if it looks like an MD5 hash (32 hex chars)
+    let refToCheck = paymentRef;
+    if (paymentRef.length === 32 && /^[a-f0-9]+$/.test(paymentRef)) {
+      // This is likely an MD5, convert to SHA256
+      refToCheck = hashSha256(paymentRef).slice(0, 64);
+      console.log("[bakong] Converted MD5 to SHA256 for lookup");
+    }
+    
     console.log("[bakong] check_payment:", refToCheck);
     const result = await khqr.check_payment(refToCheck);
     console.log("[bakong] check_payment result:", result, "type:", typeof result);
+    
+    // Return more details including amount
+    const resultStr = result as string || "UNPAID";
     return {
-      status: result as string || "UNPAID",
-      paid: result === "PAID",
+      status: resultStr,
+      paid: resultStr === "PAID",
+      // Note: khqr library may not return amount, but webhook should include it
     };
   } catch (e) {
     console.warn("[bakong] check_payment failed:", e);

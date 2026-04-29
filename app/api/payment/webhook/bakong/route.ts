@@ -62,6 +62,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "UNPAID" });
     }
 
+    // CRITICAL: Verify paid amount matches order amount
+    if (result.amount) {
+      const paidAmount = parseFloat(result.amount);
+      const expectedAmount = order.currency === "KHR"
+        ? (order.amountKhr ?? order.amountUsd * 4100)
+        : order.amountUsd;
+
+      // Allow 1% tolerance for currency conversion differences
+      const tolerance = expectedAmount * 0.01;
+      if (Math.abs(paidAmount - expectedAmount) > tolerance) {
+        console.error(`[bakong-webhook] Amount mismatch! Paid: ${paidAmount}, Expected: ${expectedAmount}`);
+        logSecurityEvent("PAYMENT_AMOUNT_MISMATCH", {
+          orderNumber: order.orderNumber,
+          paidAmount,
+          expectedAmount,
+          currency: order.currency,
+        }, req);
+
+        // Update order with failure reason
+        await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: "FAILED",
+            failureReason: `Payment amount mismatch: paid ${paidAmount} ${order.currency}, expected ${expectedAmount}`,
+          },
+        });
+
+        return NextResponse.json(
+          { error: "Payment amount mismatch", status: "FAILED" },
+          { status: 400 }
+        );
+      }
+    }
+
     await prisma.order.update({
       where: { id: order.id },
       data: {
