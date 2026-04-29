@@ -80,6 +80,12 @@ export async function POST(req: NextRequest) {
 
     // Encrypt email before saving
     const encryptedEmail = encryptField(email);
+    if (!encryptedEmail) {
+      return NextResponse.json(
+        { error: "Failed to encrypt email" },
+        { status: 500 }
+      );
+    }
     
     // Create user
     const user = await prisma.user.create({
