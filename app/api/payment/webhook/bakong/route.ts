@@ -8,6 +8,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { sanitizeInput, isSuspiciousRequest, logSecurityEvent } from "@/lib/security";
 import { hashSha256, verifyWebhookSignature } from "@/lib/encryption";
 
+// In-memory webhook replay protection (for serverless, use Redis/KV in production)
+const processedWebhooks = new Set<string>();
+
+// Dynamic exchange rate - read from settings or use environment variable
+async function getExchangeRate(): Promise<number> {
+  try {
+    const settings = await prisma.settings.findFirst();
+    if (settings?.exchangeRate) {
+      return settings.exchangeRate;
+    }
+  } catch {
+    // Settings table might not exist, use fallback
+  }
+  // Fallback to env or default
+  return parseFloat(process.env.EXCHANGE_RATE_KHR || "4100");
+}
+
 export async function POST(req: NextRequest) {
   // Check for suspicious requests
   if (isSuspiciousRequest(req)) {
@@ -17,34 +34,47 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const rawBody = JSON.stringify(body);
-    
+    const rawBodyString = JSON.stringify(body);
+
     // Verify webhook signature if provided
     const signature = req.headers.get("x-bakong-signature") || req.headers.get("x-signature");
     if (signature && process.env.BAKONG_WEBHOOK_SECRET) {
-      const isValid = verifyWebhookSignature(rawBody, signature, process.env.BAKONG_WEBHOOK_SECRET);
+      const isValid = verifyWebhookSignature(rawBodyString, signature, process.env.BAKONG_WEBHOOK_SECRET);
       if (!isValid) {
         logSecurityEvent("INVALID_WEBHOOK_SIGNATURE", { signature }, req);
         return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
       }
     }
-    
-    // Get payment reference (use SHA256 internally instead of MD5)
+
+    // Get payment reference
     const paymentRef = sanitizeInput(body.md5 || body.md5hash || body.transaction_id || "");
-    
+
     if (!paymentRef || paymentRef.length < 10) {
       return NextResponse.json({ error: "Invalid payment reference" }, { status: 400 });
     }
 
-    // Convert to SHA256 for internal lookup (more secure than MD5)
+    // REPLAY PROTECTION: Check if this webhook was already processed (in-memory)
+    const payloadHash = hashSha256(rawBodyString);
+    if (!payloadHash) {
+      return NextResponse.json({ error: "Failed to hash payload" }, { status: 500 });
+    }
+    const hashString: string = payloadHash;
+    if (processedWebhooks.has(hashString)) {
+      logSecurityEvent("WEBHOOK_REPLAY_ATTEMPT", {
+        paymentRef,
+      }, req);
+      return NextResponse.json({ ok: true, skipped: true, reason: "already_processed" });
+    }
+
+    // Convert to SHA256 for internal lookup
     const secureRef = hashSha256(paymentRef).slice(0, 64);
-    
+
     const order = await prisma.order.findFirst({
-      where: { 
+      where: {
         OR: [
           { paymentRef: paymentRef },
-          { paymentRef: secureRef }
-        ]
+          { paymentRef: secureRef },
+        ],
       },
       include: { game: true, product: true },
     });
@@ -57,6 +87,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
+    // Check payment status with Bakong
     const result = await checkBakongPayment(paymentRef);
     if (!result || !result.paid) {
       return NextResponse.json({ status: "UNPAID" });
@@ -65,19 +96,26 @@ export async function POST(req: NextRequest) {
     // CRITICAL: Verify paid amount matches order amount
     if (result.amount) {
       const paidAmount = parseFloat(result.amount);
+
+      // Use dynamic exchange rate
+      const exchangeRate = await getExchangeRate();
+
       const expectedAmount = order.currency === "KHR"
-        ? (order.amountKhr ?? order.amountUsd * 4100)
+        ? (order.amountKhr ?? order.amountUsd * exchangeRate)
         : order.amountUsd;
 
-      // Allow 1% tolerance for currency conversion differences
-      const tolerance = expectedAmount * 0.01;
+      // Strict amount checking - no tolerance for KHR (exact match)
+      // Small tolerance for USD due to potential floating point issues
+      const tolerance = order.currency === "KHR" ? 0 : 0.01;
+
       if (Math.abs(paidAmount - expectedAmount) > tolerance) {
-        console.error(`[bakong-webhook] Amount mismatch! Paid: ${paidAmount}, Expected: ${expectedAmount}`);
+        console.error(`[bakong-webhook] Amount mismatch! Paid: ${paidAmount}, Expected: ${expectedAmount}, Currency: ${order.currency}`);
         logSecurityEvent("PAYMENT_AMOUNT_MISMATCH", {
           orderNumber: order.orderNumber,
           paidAmount,
           expectedAmount,
           currency: order.currency,
+          exchangeRate,
         }, req);
 
         // Update order with failure reason
@@ -85,7 +123,7 @@ export async function POST(req: NextRequest) {
           where: { id: order.id },
           data: {
             status: "FAILED",
-            failureReason: `Payment amount mismatch: paid ${paidAmount} ${order.currency}, expected ${expectedAmount}`,
+            failureReason: `Payment amount mismatch: paid ${paidAmount} ${order.currency}, expected ${expectedAmount.toFixed(2)}`,
           },
         });
 
@@ -96,13 +134,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Log the webhook as processed (replay protection - in-memory)
+    processedWebhooks.add(payloadHash);
+    // Keep set size manageable (max 1000 entries)
+    if (processedWebhooks.size > 1000) {
+      const iterator = processedWebhooks.values();
+      for (let i = 0; i < 500; i++) {
+        const next = iterator.next();
+        if (!next.done) {
+          processedWebhooks.delete(next.value);
+        }
+      }
+    }
+
     await prisma.order.update({
       where: { id: order.id },
       data: {
         status: "DELIVERED",
         paidAt: new Date(),
         deliveredAt: new Date(),
-        paymentRef: secureRef, // Store SHA256 version instead of MD5
+        paymentRef: secureRef,
       },
     });
 

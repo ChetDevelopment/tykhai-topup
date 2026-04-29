@@ -64,10 +64,6 @@ export async function PATCH(req: NextRequest) {
   const updates: Record<string, unknown> = {};
 
   switch (action) {
-    case "mark_paid":
-      updates.status = "PAID";
-      updates.paidAt = new Date();
-      break;
     case "mark_delivered":
       updates.status = "DELIVERED";
       updates.deliveredAt = new Date();
@@ -79,26 +75,13 @@ export async function PATCH(req: NextRequest) {
       updates.status = "REFUNDED";
       break;
     default:
-      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid action. Note: mark_paid is disabled for security." }, { status: 400 });
   }
 
   const results = await prisma.order.updateMany({
     where: { id: { in: orderIds } },
     data: updates,
   });
-
-  if (action === "mark_paid") {
-    const orders = await prisma.order.findMany({
-      where: { id: { in: orderIds }, userId: { not: null } },
-      select: { userId: true, amountUsd: true },
-    });
-
-    for (const order of orders) {
-      if (order.userId) {
-        await updateUserTotalSpent(order.userId, order.amountUsd);
-      }
-    }
-  }
 
   await writeAudit({
     action: `orders.bulk_${action}`,

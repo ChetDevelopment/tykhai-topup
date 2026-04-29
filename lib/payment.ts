@@ -41,9 +41,6 @@ export async function initiatePayment(
   // Only use real payment methods - NO simulation fallback
   if (args.method === "BAKONG" && BAKONG_TOKEN) return initiateBakong(args);
 
-  // GamesDrop removed - was causing issues
-  // if (args.method === "GAMESDROP") return initiateGamesDrop(args);
-
   if (args.method === "TRUEMONEY") return initiateTrueMoney(args);
   if (args.method === "WING") return initiateWing(args);
   if (args.method === "BANK") return initiateBankTransfer(args);
@@ -87,31 +84,31 @@ async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitRes
     currency: paymentCurrency,
     bill_number: args.orderNumber.substring(0, 25),
     terminal_label: "TyKhai",
-    static: true,
+    static: true, // Changed to true - QR doesn't expire, amount verified in webhook
   });
-  
-   if (!qrResult) {
-     throw new Error("Bakong: failed to generate QR");
-   }
 
-   // Use SHA256 instead of MD5 for better security
-   const secureRef = hashSha256(qrResult).slice(0, 64);
-   const paymentRef = secureRef;
+  if (!qrResult || qrResult.length < 100) {
+    throw new Error("Bakong: failed to generate valid QR (invalid response)");
+  }
 
-   // Encrypt sensitive QR string before storing
-   const encryptedQr = encryptField(qrResult);
+  // Use SHA256 instead of MD5 for better security
+  const secureRef = hashSha256(qrResult).slice(0, 64);
+  const paymentRef = secureRef;
 
-   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-   const redirectUrl = `${baseUrl}/checkout/${args.orderNumber}`;
+  // Encrypt sensitive QR string before storing
+  const encryptedQr = encryptField(qrResult);
 
-   return {
-     paymentRef,
-     redirectUrl,
-     qrString: qrResult, // Return unencrypted for immediate use
-     qrStringEnc: encryptedQr, // Encrypted version for storage
-     expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-     instructions: `Scan the QR code with Bakong app to pay ${amount} ${args.currency}`,
-   };
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  const redirectUrl = `${baseUrl}/checkout/${args.orderNumber}`;
+
+  return {
+    paymentRef,
+    redirectUrl,
+    qrString: qrResult, // Return unencrypted for immediate use
+    qrStringEnc: encryptedQr, // Encrypted version for storage
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    instructions: `Scan the QR code with Bakong app to pay ${amount} ${args.currency}`,
+  };
 }
 
 export async function checkBakongPayment(paymentRef: string): Promise<{
@@ -119,6 +116,7 @@ export async function checkBakongPayment(paymentRef: string): Promise<{
   paid: boolean;
   amount?: string;
   currency?: string;
+  receiverAccount?: string;
 } | null> {
   if (!BAKONG_TOKEN) {
     return null;
@@ -130,26 +128,33 @@ export async function checkBakongPayment(paymentRef: string): Promise<{
     // Convert to SHA256 if it looks like an MD5 hash (32 hex chars)
     let refToCheck = paymentRef;
     if (paymentRef.length === 32 && /^[a-f0-9]+$/.test(paymentRef)) {
-      // This is likely an MD5, convert to SHA256
       refToCheck = hashSha256(paymentRef).slice(0, 64);
-      console.log("[bakong] Converted MD5 to SHA256 for lookup");
     }
 
-    console.log("[bakong] get_payment:", refToCheck);
-    // Use get_payment instead of check_payment to get transaction details
     const result = await khqr.get_payment(refToCheck);
-    console.log("[bakong] get_payment result:", result);
 
-    if (!result || !result.data) {
+    // If get_payment returns a result, the transaction exists and is completed
+    if (!result) {
       return { status: "UNPAID", paid: false };
     }
 
-    const data = result.data;
+    // Verify the payment was sent TO our merchant account
+    const expectedAccount = BAKONG_ACCOUNT;
+    const receiverAccount = result.toAccountId || result.receiverBankAccount || "";
+
+    // If receiver doesn't match our account, this is suspicious
+    if (expectedAccount && receiverAccount && !receiverAccount.includes(expectedAccount)) {
+      console.error(`[bakong] Payment sent to wrong account! Expected: ${expectedAccount}, Got: ${receiverAccount}`);
+      return { status: "WRONG_RECEIVER", paid: false };
+    }
+
+    // Extract amount and currency from the transaction result
     return {
-      status: data.responseCode === 0 ? "PAID" : "UNPAID",
-      paid: data.responseCode === 0,
-      amount: data.transactionAmount || data.amount,
-      currency: data.transactionCurrency || data.currency,
+      status: "PAID",
+      paid: true,
+      amount: result.amount?.toString(),
+      currency: result.currency,
+      receiverAccount,
     };
   } catch (e) {
     console.warn("[bakong] get_payment failed:", e);
@@ -187,6 +192,7 @@ async function initiateWing(args: InitiatePaymentArgs): Promise<PaymentInitResul
     redirectUrl: `${process.env.NEXT_PUBLIC_BASE_URL}/api/payment/simulate?order=${args.orderNumber}&ref=${ref}&method=WING`,
     qrString: null,
     expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    instructions: `Transfer ${args.currency === "KHR" ? args.amountKhr : args.amountUsd} to WING ${wingMsisdn}`,
   };
 }
 

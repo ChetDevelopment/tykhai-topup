@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
+import { getCurrentUser } from "@/lib/auth";
+import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -9,6 +11,20 @@ const lookupSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // REQUIRE authentication - either user (to see their own orders) or admin
+  const user = await getCurrentUser();
+
+  // Check if admin
+  const adminSecurity = await guardAdminApi(req);
+  const isAdmin = !("response" in adminSecurity);
+
+  if (!user && !isAdmin) {
+    return NextResponse.json(
+      { error: "Authentication required" },
+      { status: 401 }
+    );
+  }
+
   try {
     const body = await req.json();
     const parsed = lookupSchema.safeParse(body);
@@ -26,15 +42,22 @@ export async function POST(req: NextRequest) {
     // Hide PENDING / CANCELLED / FAILED / REFUNDED from public search.
     const PAID_STATUSES = ["PAID", "PROCESSING", "DELIVERED"];
 
+    const whereClause: any = {
+      status: { in: PAID_STATUSES },
+      OR: [
+        { customerEmail: trimmed.toLowerCase() },
+        { customerEmail: trimmed },
+        { customerPhone: trimmed },
+      ],
+    };
+
+    // Non-admin users can only see their own orders
+    if (!isAdmin && user) {
+      whereClause.userId = user.userId;
+    }
+
     const orders = await prisma.order.findMany({
-      where: {
-        status: { in: PAID_STATUSES },
-        OR: [
-          { customerEmail: trimmed.toLowerCase() },
-          { customerEmail: trimmed },
-          { customerPhone: trimmed },
-        ],
-      },
+      where: whereClause,
       orderBy: { createdAt: "desc" },
       take: 10,
       include: {
@@ -45,7 +68,7 @@ export async function POST(req: NextRequest) {
 
     if (orders.length === 0) {
       return NextResponse.json(
-        { error: "No paid orders found for this email or phone number" },
+        { error: "No paid orders found" },
         { status: 404 }
       );
     }

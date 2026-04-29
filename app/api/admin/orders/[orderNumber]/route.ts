@@ -57,14 +57,28 @@ export async function PATCH(
   if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const data: any = { ...parsed.data };
-  if (parsed.data.status === "DELIVERED" && !order.deliveredAt) {
-    data.deliveredAt = new Date();
-  }
+
+  // SECURITY: Prevent manual PAID status without proper verification
   if (parsed.data.status === "PAID" && !order.paidAt) {
+    // Require paymentRef to exist - order must have a payment reference
+    if (!order.paymentRef) {
+      return NextResponse.json(
+        { error: "Cannot mark as PAID: no payment reference found. Process payment first." },
+        { status: 400 }
+      );
+    }
+
+    // Log this manual override for audit
+    logSecurityEvent("SECURITY", `MANUAL_PAID_OVERRIDE: ${order.orderNumber}, amount: ${order.amountUsd} ${order.currency}`, req);
+
     data.paidAt = new Date();
     if (order.userId) {
       await updateUserTotalSpent(order.userId, order.amountUsd);
     }
+  }
+
+  if (parsed.data.status === "DELIVERED" && !order.deliveredAt) {
+    data.deliveredAt = new Date();
   }
 
   const updated = await prisma.order.update({

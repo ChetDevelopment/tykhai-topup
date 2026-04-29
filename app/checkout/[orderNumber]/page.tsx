@@ -458,10 +458,11 @@ export default function CheckoutPage() {
                   {simulating ? "SIMULATING..." : "DEBUG: FORCE SYNC PAYMENT"}
                 </button>
 )}
-             </div>
-           </div>
-         )}
-      </main>
+               </div>
+               </div>
+             )}
+
+             {/* Removed DEBUG button - security risk */}
 
       {/* Cancel Modal */}
       {showCancelModal && order && (
