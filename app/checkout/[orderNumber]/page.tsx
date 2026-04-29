@@ -108,21 +108,16 @@ export default function CheckoutPage() {
   useEffect(() => {
     fetch("/api/user/me", { cache: "no-store" })
       .then(async (res) => {
-        if (!res.ok) {
-          router.replace("/login");
-          return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            setUser(data.user);
+          }
         }
-
-        const data = await res.json();
-        if (!data.user) {
-          router.replace("/login");
-          return;
-        }
-
-        setUser(data.user);
+        // Continue even if not logged in - order might be in session
         setAuthReady(true);
       })
-      .catch(() => router.replace("/login"));
+      .catch(() => setAuthReady(true));
   }, [router]);
 
   const fetchOrder = useCallback(async () => {
