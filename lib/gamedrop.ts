@@ -1,5 +1,3 @@
-import { decryptField } from "./encryption";
-
 export type BalanceResponse = {
   balance: number;
   draftBalance: number;
@@ -8,9 +6,8 @@ export type BalanceResponse = {
   partnerId: number;
 };
 
-export async function checkGameDropBalance(encryptedToken: string): Promise<BalanceResponse> {
-  const token = decryptField(encryptedToken);
-  if (!token) throw new Error("Invalid GameDrop token");
+export async function checkGameDropBalance(token: string): Promise<BalanceResponse> {
+  if (!token) throw new Error("GameDrop token not configured");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);

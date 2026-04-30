@@ -178,10 +178,10 @@ export default function AdminSettingsPage() {
           <p className="text-xs text-royal-muted mb-3">Configure GameDrop reseller API for balance monitoring.</p>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="label">API Token (encrypted)</label>
+              <label className="label">API Token</label>
               <input
                 className="input font-mono text-xs"
-                type="password"
+                type="text"
                 value={form.gameDropToken || ""}
                 onChange={(e) => setForm({ ...form, gameDropToken: e.target.value })}
                 placeholder="Enter GameDrop Shop API Token"
