@@ -1,5 +1,10 @@
 {
   "framework": "nextjs",
   "buildCommand": "npm run build",
-  "installCommand": "npm install --legacy-peer-deps"
+  "installCommand": "npm install --legacy-peer-deps",
+  "outputDirectory": ".next",
+  "images": {
+    "sizes": [64, 128, 256, 640, 750, 828, 1080, 1200, 1920, 2048, 3840, 3840],
+    "domains": ["res.cloudinary.com", "cdn.jsdelivr.net", "tykhai.com", "tykhai.vercel.app"]
+  }
 }

@@ -8,7 +8,7 @@ import { QrCode, ArrowRight, Lock, Check, Smartphone, Search, UserRoundCheck, Sh
 import Countdown from "./Countdown";
 import SquadPoolUI from "./SquadPoolUI";
 
-// Games that support automatic nickname lookup via /api/lookup-uid
+  // Games that support automatic nickname lookup via /api/games/check-id
 const LOOKUP_SLUGS = new Set(["mobile-legends", "free-fire", "genshin-impact", "honkai-star-rail"]);
 // MLBB & similar games that use a separate "Zone ID" instead of a server dropdown
 const ZONE_ID_SLUGS = new Set(["mobile-legends"]);
@@ -147,21 +147,21 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
       abortRef.current = controller;
 
       try {
-        const res = await fetch("/api/lookup-uid", {
+        const res = await fetch("/api/games/check-id", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            gameSlug: game.slug,
+            slug: game.slug,
             uid: uid.trim(),
-            server: serverId.trim() || undefined,
+            serverId: serverId.trim() || undefined,
           }),
           signal: controller.signal,
         });
         const data = await res.json();
         if (controller.signal.aborted) return;
 
-        if (data.verified && data.nickname) {
-          setNickname(data.nickname);
+        if (data.success && data.name) {
+          setNickname(data.name);
           setNicknameStatus("verified");
         } else {
           setNicknameStatus("not_found");

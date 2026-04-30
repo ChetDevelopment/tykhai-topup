@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 import crypto from "crypto";
+import { put } from "@vercel/blob";
 import { guardAdminApi } from "@/lib/api-security";
 
 export const runtime = "nodejs";
@@ -100,13 +99,15 @@ export async function POST(req: NextRequest) {
     }
 
     const name = `${Date.now()}-${crypto.randomBytes(16).toString("hex")}.${ALLOWED_TYPES[detectedType]}`;
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(uploadsDir, { recursive: true });
 
-    await writeFile(path.join(uploadsDir, name), buffer);
+    // Upload to Vercel Blob
+    const blob = await put(name, buffer, {
+      access: "public",
+      contentType: detectedType,
+    });
 
     return NextResponse.json({
-      url: `/uploads/${name}`,
+      url: blob.url,
       size: file.size,
       type: detectedType,
     });
