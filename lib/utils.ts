@@ -34,3 +34,17 @@ export function isValidUid(uid: string): boolean {
 export function isValidServerId(sid: string): boolean {
   return /^\d{1,5}$/.test(sid.trim());
 }
+
+// Validate player nickname - prevent XSS/injection
+// Allow: letters, numbers, spaces, common gaming characters
+// Length: 2-30 characters
+export function isValidNickname(nickname: string): boolean {
+  if (typeof nickname !== "string") return false;
+  const trimmed = nickname.trim();
+  if (trimmed.length < 2 || trimmed.length > 30) return false;
+  
+  // Only allow safe characters for nicknames
+  // Letters (any language), numbers, spaces, dots, dashes, underscores
+  // NO < > " ' ; ( ) & + \ etc.
+  return /^[\w\s.\-]{2,30}$/.test(trimmed);
+}
