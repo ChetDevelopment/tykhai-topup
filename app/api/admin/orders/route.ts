@@ -39,12 +39,23 @@ export async function GET(req: NextRequest) {
     prisma.order.count({ where }),
   ]);
 
-  // Decrypt customer emails for admin display
-  const decryptedOrders = orders.map((order: any) => ({
-    ...order,
-    customerEmail: order.customerEmail ? (decryptField(order.customerEmail) || order.customerEmail) : null,
-    customerPhone: order.customerPhone ? (decryptField(order.customerPhone) || order.customerPhone) : null,
-  }));
+  // Decrypt and sanitize customer data for admin display
+  const decryptedOrders = orders.map((order: any) => {
+    const email = order.customerEmail ? (decryptField(order.customerEmail) || order.customerEmail) : null;
+    const phone = order.customerPhone ? (decryptField(order.customerPhone) || order.customerPhone) : null;
+    
+    // Sanitize UID to prevent XSS in admin panel
+    const sanitizedUid = order.playerUid?.replace(/[<>\"\'%;()&+\\]/g, "") || order.playerUid;
+    const sanitizedServerId = order.serverId?.replace(/[<>\"\'%;()&+\\]/g, "") || order.serverId;
+    
+    return {
+      ...order,
+      customerEmail: email,
+      customerPhone: phone,
+      playerUid: sanitizedUid,
+      serverId: sanitizedServerId,
+    };
+  });
 
   return NextResponse.json({
     orders: decryptedOrders,
