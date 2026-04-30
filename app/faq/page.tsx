@@ -17,10 +17,10 @@ export default async function FaqPage() {
     orderBy: [{ category: "asc" }, { sortOrder: "asc" }],
   });
 
-  const grouped = faqs.reduce<Record<string, typeof faqs>>((acc, f) => {
+  const grouped = faqs.reduce<Record<string, any>>((acc, f) => {
     (acc[f.category] = acc[f.category] || []).push(f);
     return acc;
-  }, {});
+  }, {} as Record<string, any>);
 
   return (
     <>
@@ -34,7 +34,7 @@ export default async function FaqPage() {
         {faqs.length === 0 ? (
           <div className="card p-10 text-center text-royal-muted text-sm">No questions published yet.</div>
         ) : (
-          Object.entries(grouped).map(([cat, list]) => (
+          Object.entries(grouped).map(([cat, list]: [string, any]) => (
             <section key={cat} className="mb-10">
               <h2 className="text-xs uppercase tracking-widest text-royal-muted mb-3">{cat}</h2>
               <div className="space-y-2">

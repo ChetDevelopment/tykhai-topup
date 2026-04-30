@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   // Decrypt customer emails for admin display
-  const decryptedOrders = orders.map(order => ({
+  const decryptedOrders = orders.map((order: any) => ({
     ...order,
     customerEmail: order.customerEmail ? (decryptField(order.customerEmail) || order.customerEmail) : null,
     customerPhone: order.customerPhone ? (decryptField(order.customerPhone) || order.customerPhone) : null,

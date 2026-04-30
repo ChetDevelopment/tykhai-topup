@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
     "Delivered",
   ];
 
-  const rows = orders.map((order) =>
+  const rows = orders.map((order: any) =>
     [
       order.orderNumber,
       order.status,

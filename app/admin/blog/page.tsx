@@ -33,7 +33,7 @@ export default async function BlogAdminPage() {
         <div className="card p-10 text-center text-royal-muted text-sm">No posts yet. Create your first one.</div>
       ) : (
         <div className="card divide-y divide-royal-border">
-          {posts.map((p) => (
+          {posts.map((p: any) => (
             <div key={p.id} className="p-4 flex items-center gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

@@ -83,9 +83,15 @@ export function decryptField(encryptedStr: string | null | undefined): string | 
   if (!encryptedStr) return null;
   try {
     const encryptedData = JSON.parse(encryptedStr) as EncryptedData;
-    return decrypt(encryptedData);
+    // Check if it has the required encryption fields
+    if (encryptedData.iv && encryptedData.encrypted && encryptedData.tag) {
+      return decrypt(encryptedData);
+    }
+    // Not encrypted JSON, return as-is (plain text)
+    return encryptedStr;
   } catch {
-    return null;
+    // Not JSON at all, return as-is (plain text)
+    return encryptedStr;
   }
 }
 

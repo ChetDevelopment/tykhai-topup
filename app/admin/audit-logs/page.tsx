@@ -35,7 +35,7 @@ export default async function AuditLogsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-royal-border/60">
-              {logs.map((l) => (
+              {logs.map((l: any) => (
                 <tr key={l.id} className="hover:bg-royal-surface/40">
                   <td className="py-2 px-4 text-royal-muted whitespace-nowrap">{new Date(l.createdAt).toLocaleString()}</td>
                   <td className="py-2 px-4">{l.adminEmail || "—"}</td>

@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const all = await prisma.game.findMany({
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });
-  const idx = all.findIndex((game) => game.id === parsed.data.id);
+  const idx = all.findIndex((game: any) => game.id === parsed.data.id);
   if (idx === -1) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const swapIdx = parsed.data.direction === "up" ? idx - 1 : idx + 1;
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   // Normalize if both had the same sortOrder (happens with defaults of 0).
   if (a.sortOrder === b.sortOrder) {
     await prisma.$transaction(
-      all.map((game, index) =>
+      all.map((game: any, index: number) =>
         prisma.game.update({
           where: { id: game.id },
           data: { sortOrder: index * 10 },

@@ -35,7 +35,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // For /api/admin/* we still want to verify token (except auth routes)
-  const token = req.cookies.get(SESSION_COOKIE)?.value || req.cookies.get(USER_COOKIE)?.value;
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
   const secret = getSecret();
 
   if (!token || !secret) {
@@ -46,7 +46,10 @@ export async function middleware(req: NextRequest) {
   }
 
   try {
-    await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secret);
+    if (!payload.adminId) {
+      throw new Error("Not an admin token");
+    }
     return NextResponse.next();
   } catch {
     if (pathname.startsWith("/api/")) {

@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   });
 
   // Decrypt emails
-  const decryptedResellers = resellers.map(reseller => ({
+  const decryptedResellers = resellers.map((reseller: any) => ({
     ...reseller,
     email: reseller.email ? (decryptField(reseller.email) || reseller.email) : reseller.email,
   }));

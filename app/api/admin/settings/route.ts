@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
-import { NextRequest, NextResponse } from "next/server";
 import { guardAdminApi } from "@/lib/api-security";
-import { encryptField } from "@/lib/encryption";
+import { encryptField, decryptField } from "@/lib/encryption";
 import { z } from "zod";
 
 const settingsSchema = z.object({
@@ -35,11 +35,22 @@ function serializeSettings<T extends {
   telegramChatId?: string | null;
   gameDropToken?: string | null;
 }>(settings: T) {
+  // For gameDropToken, handle both encrypted and plain text (migration)
+  let gameDropToken = settings.gameDropToken;
+  if (gameDropToken) {
+    try {
+      const decrypted = decryptField(gameDropToken);
+      gameDropToken = decrypted || gameDropToken; // Use decrypted if successful, else keep as-is
+    } catch {
+      // Already plain text
+    }
+  }
+  
   return {
     ...settings,
-    telegramBotToken: settings.telegramBotToken ?? null,
-    telegramChatId: settings.telegramChatId ?? null,
-    gameDropToken: settings.gameDropToken ?? null, // Plain text - no decryption needed
+    telegramBotToken: decryptField(settings.telegramBotToken),
+    telegramChatId: decryptField(settings.telegramChatId),
+    gameDropToken,
   };
 }
 
@@ -74,9 +85,8 @@ export async function PATCH(req: NextRequest) {
     ...("telegramChatId" in parsed.data
       ? { telegramChatId: encryptField(parsed.data.telegramChatId) }
       : {}),
-    // GameDrop token stored as plain text (no encryption needed)
     ...("gameDropToken" in parsed.data
-      ? { gameDropToken: parsed.data.gameDropToken }
+      ? { gameDropToken: encryptField(parsed.data.gameDropToken) }
       : {}),
   };
 

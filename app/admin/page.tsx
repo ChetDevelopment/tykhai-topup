@@ -204,7 +204,7 @@ export default async function AdminDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-royal-border">
-              {recentOrders.map((o) => (
+              {recentOrders.map((o: any) => (
                 <tr key={o.id} className="hover:bg-royal-surface/50 transition-colors">
                   <td className="px-4 sm:px-5 py-3">
                     <Link href={`/admin/orders/${o.orderNumber}`} className="font-mono text-royal-primary hover:underline text-xs sm:text-sm">
