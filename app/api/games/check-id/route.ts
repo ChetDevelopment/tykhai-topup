@@ -13,9 +13,16 @@ export const runtime = "nodejs";
 
 const schema = z.object({
   slug: z.enum(["mobile-legends", "genshin-impact", "honkai-star-rail", "free-fire"]),
-  uid: z.string().regex(/^\d{5,12}$/, "UID must be 5–12 digits"),
-  serverId: z.string().regex(/^\d{1,6}$/, "Server/Zone must be digits").optional(),
+  uid: z.string().min(4, "UID must be at least 4 characters").max(20, "UID too long"),
+  serverId: z.string().min(1).max(6).optional(),
 });
+
+// Safe parsing: accept both serverId as string or undefined
+function sanitizeServerId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
 
 // Maps our game slugs → isan endpoint path + whether a server param is needed.
 const UPSTREAM: Record<
@@ -36,14 +43,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
   }
 
+  // Debug logging for production
+  console.log("[check-id] Request body:", JSON.stringify(body));
+
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
+    console.error("[check-id] Validation error:", parsed.error.issues);
     return NextResponse.json(
       { success: false, error: parsed.error.issues[0]?.message || "Invalid input" },
       { status: 400 }
     );
   }
-  const { slug, uid, serverId } = parsed.data;
+  const { slug, uid, serverId: rawServerId } = parsed.data;
+  
+  // Handle serverId: convert empty string to undefined
+  const serverId = rawServerId && rawServerId.trim().length > 0 ? rawServerId.trim() : undefined;
+  
+  console.log("[check-id] Parsed:", { slug, uid, serverId });
+  
+  // Validate UID format based on game
+  if (slug === "mobile-legends" && (!uid || !/^\d{5,12}$/.test(uid.trim()))) {
+    return NextResponse.json(
+      { success: false, error: "Mobile Legends UID must be 5-12 digits" },
+      { status: 400 }
+    );
+  }
 
   // Free Fire uses a different upstream API (camrapidx)
   if (slug === "free-fire") {
