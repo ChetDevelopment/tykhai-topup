@@ -14,8 +14,10 @@ import { sanitizeInput, isSuspiciousRequest, logSecurityEvent } from "@/lib/secu
 import { hashSha256, verifyWebhookSignature } from "@/lib/encryption";
 import { canTransition } from "@/lib/payment-types";
 
-// In-memory webhook replay protection (for serverless, use Redis/KV in production)
-const processedWebhooks = new Set<string>();
+// Webhook replay protection using database (serverless-safe)
+// In-memory cache for quick deduplication (within same instance)
+const recentWebhookCache = new Set<string>();
+const MAX_CACHE_SIZE = 500;
 
 // Dynamic exchange rate
 async function getExchangeRate(): Promise<number> {
@@ -30,12 +32,57 @@ async function getExchangeRate(): Promise<number> {
   return parseFloat(process.env.EXCHANGE_RATE_KHR || "4100");
 }
 
+import { z } from "zod";
+
+// Webhook payload validation schema
+const WebhookSchema = z.object({
+  md5: z.string().optional(),
+  md5hash: z.string().optional(),
+  transaction_id: z.string().optional(),
+  amount: z.number().optional(),
+  currency: z.string().optional(),
+  status: z.string().optional(),
+  transactionId: z.string().optional(),
+  acknowledgedDateMs: z.number().optional(),
+  toAccountId: z.string().optional(),
+  receiverBankAccount: z.string().optional(),
+});
+
 export async function POST(req: NextRequest) {
   // Check for suspicious requests
   if (isSuspiciousRequest(req)) {
-    await logSecurityEvent("SUSPICIOUS_WEBHOOK", { url: req.url }, req);
+    await logSecurityEvent("SUSPICIOUS_WEB_HOOK", { url: req.url }, req);
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  try {
+    const body = await req.json();
+    const rawBodyString = JSON.stringify(body);
+
+    // Validate webhook payload with Zod
+    const parseResult = WebhookSchema.safeParse(body);
+    if (!parseResult.success) {
+      await logSecurityEvent("INVALID_WEBHOOK_PAYLOAD", { errors: parseResult.error.errors }, req);
+      return NextResponse.json({ error: "Invalid payload format" }, { status: 400 });
+    }
+
+    const validatedBody = parseResult.data;
+
+    // Verify webhook signature if provided
+    const signature = req.headers.get("x-bakong-signature") || req.headers.get("x-signature");
+    if (signature && process.env.BAKONG_WEBHOOK_SECRET) {
+      const isValid = verifyWebhookSignature(rawBodyString, signature, process.env.BAKONG_WEBHOOK_SECRET);
+      if (!isValid) {
+        await logSecurityEvent("INVALID_WEB_HOOK_SIGNATURE", { signature }, req);
+        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      }
+    }
+
+    // Get payment reference from validated payload
+    const paymentRef = sanitizeInput(validatedBody.md5 || validatedBody.md5hash || validatedBody.transaction_id || "");
+    if (!paymentRef || paymentRef.length < 10) {
+      return NextResponse.json({ error: "Invalid payment reference" }, { status: 400 });
+    }
 
   try {
     const body = await req.json();
@@ -57,10 +104,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid payment reference" }, { status: 400 });
     }
 
-    // REPLAY PROTECTION
+    // REPLAY PROTECTION (Database-based for serverless safety)
     const payloadHash = hashSha256(rawBodyString);
     if (!payloadHash) {
       return NextResponse.json({ error: "Failed to hash payload" }, { status: 500 });
+    }
+
+    // Quick in-memory check first (for performance)
+    if (recentWebhookCache.has(payloadHash)) {
+      await logSecurityEvent("WEB_HOOK_REPLAY_ATTEMPT", { paymentRef }, req);
+      return NextResponse.json({ ok: true, skipped: true, reason: "already_processed" });
+    }
+
+    // Database check for persistent replay protection
+    const existingLog = await prisma.paymentLog.findFirst({
+      where: {
+        OR: [
+          { paymentRef: paymentRef },
+          { paymentRef: secureRef },
+          { metadata: { contains: payloadHash } },
+        ],
+        event: "WEBHOOK_PROCESSED",
+      },
+    });
+
+    if (existingLog) {
+      await logSecurityEvent("WEB_HOOK_REPLAY_ATTEMPT_DB", { paymentRef }, req);
+      return NextResponse.json({ ok: true, skipped: true, reason: "already_processed" });
     }
 
     if (processedWebhooks.has(payloadHash)) {
@@ -113,7 +183,7 @@ export async function POST(req: NextRequest) {
           exchangeRate,
         }, req);
 
-        await prisma.order.update({
+        await prisma.order.updateMany({
           where: { id: order.id },
           data: {
             status: "FAILED",
@@ -128,18 +198,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Log the webhook as processed (replay protection)
-    processedWebhooks.add(payloadHash);
-    // Keep set size manageable
-    if (processedWebhooks.size > 1000) {
-      const iterator = processedWebhooks.values();
-      for (let i = 0; i < 500; i++) {
+    // Log the webhook as processed (database-based replay protection)
+    recentWebhookCache.add(payloadHash);
+    // Keep in-memory cache size manageable
+    if (recentWebhookCache.size > MAX_CACHE_SIZE) {
+      const iterator = recentWebhookCache.values();
+      for (let i = 0; i < MAX_CACHE_SIZE / 2; i++) {
         const next = iterator.next();
         if (!next.done) {
-          processedWebhooks.delete(next.value);
+          recentWebhookCache.delete(next.value);
         }
       }
     }
+
+    // Persistent database log for cross-instance replay protection
+    await prisma.paymentLog.create({
+      data: {
+        orderId: order.id,
+        paymentRef: secureRef,
+        event: "WEBHOOK_PROCESSED",
+        status: "SUCCESS",
+        amount: result.amount ? parseFloat(String(result.amount)) : undefined,
+        currency: result.currency || order.currency,
+        metadata: JSON.stringify({ payloadHash, timestamp: new Date().toISOString() }),
+      },
+    });
 
     // Process the successful payment
     await processSuccessfulPayment(order.id, {

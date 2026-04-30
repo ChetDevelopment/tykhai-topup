@@ -368,41 +368,20 @@ async function logPaymentEvent(entry: {
   }
 }
 
-// ===================== Process Delivered Order =====================
+// ===================== Process Delivered Order (Idempotent) =====================
 export async function processSuccessfulPayment(orderId: string, paymentData: {
   paymentRef: string;
   amount: number;
   currency: string;
   transactionId?: string;
-}) {
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: { game: true, product: true, user: true },
-  });
-
-  if (!order || order.status === "DELIVERED") {
-    return order;
-  }
-
-  // Release wallet reservation if exists
-  const reservation = await prisma.walletReservation.findFirst({
-    where: { orderId: order.id, status: "ACTIVE" },
-  });
-  if (reservation) {
-    await prisma.walletReservation.update({
-      where: { id: reservation.id },
-      data: { status: "CONSUMED" },
-    });
-    // Decrement reserved balance in settings
-    await prisma.settings.update({
-      where: { id: 1 },
-      data: { reservedBalance: { decrement: reservation.amount } },
-    });
-  }
-
-  // Update order status
-  const updated = await prisma.order.update({
-    where: { id: orderId },
+}): Promise<ReturnType<typeof prisma.order.findUnique> | null> {
+  // ATOMIC: Use updateMany to prevent race conditions
+  // Only update if status is PENDING or PAID (not already DELIVERED)
+  const updateResult = await prisma.order.updateMany({
+    where: {
+      id: orderId,
+      status: { in: ["PENDING", "PAID", "PROCESSING"] },
+    },
     data: {
       status: "DELIVERED",
       paidAt: new Date(),
@@ -410,8 +389,41 @@ export async function processSuccessfulPayment(orderId: string, paymentData: {
       paymentRef: paymentData.paymentRef,
       paymentRefEnc: hashSha256(paymentData.paymentRef).slice(0, 64),
     },
+  });
+
+  // If no rows affected, order was already processed or doesn't exist
+  if (updateResult.count === 0) {
+    // Check if already delivered (idempotency)
+    const existing = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { game: true, product: true, user: true },
+    });
+    return existing;
+  }
+
+  // Fetch the updated order with relations
+  const updated = await prisma.order.findUnique({
+    where: { id: orderId },
     include: { game: true, product: true, user: true },
   });
+
+  if (!updated) return null;
+
+  // Release wallet reservation if exists (after successful payment)
+  const reservation = await prisma.walletReservation.findFirst({
+    where: { orderId: updated.id, status: "ACTIVE" },
+  });
+  if (reservation) {
+    await prisma.walletReservation.update({
+      where: { id: reservation.id },
+      data: { status: "CONSUMED" },
+    });
+    // Decrement reserved balance in settings atomically
+    await prisma.settings.update({
+      where: { id: 1 },
+      data: { reservedBalance: { decrement: reservation.amount } },
+    });
+  }
 
   // Update user total spent (for VIP rank)
   if (updated.userId) {
@@ -419,24 +431,40 @@ export async function processSuccessfulPayment(orderId: string, paymentData: {
     await updateUserTotalSpent(updated.userId, updated.amountUsd);
   }
 
-  // Send receipt email
+  // Send receipt email (async, non-blocking)
   if (updated.customerEmail) {
-    const { sendOrderReceipt } = await import("./email");
     const customerEmail = updated.customerEmail; // Already decrypted by API
     if (customerEmail) {
-      await sendOrderReceipt({
-        orderNumber: updated.orderNumber,
-        gameName: updated.game.name,
-        productName: updated.product.name,
-        playerUid: updated.playerUid,
-        amountUsd: updated.amountUsd,
-        amountKhr: updated.amountKhr,
-        currency: updated.currency,
-        paidAt: updated.paidAt,
-        deliveredAt: updated.deliveredAt,
-        status: updated.status,
-        customerEmail,
-      }).catch(() => {}); // Don't fail if email fails
+      // Fire and forget - don't block payment processing
+      Promise.resolve().then(async () => {
+        try {
+          const { sendOrderReceipt } = await import("./email");
+          await sendOrderReceipt({
+            orderNumber: updated.orderNumber,
+            gameName: updated.game.name,
+            productName: updated.product.name,
+            playerUid: updated.playerUid,
+            amountUsd: updated.amountUsd,
+            amountKhr: updated.amountKhr,
+            currency: updated.currency,
+            paidAt: updated.paidAt,
+            deliveredAt: updated.deliveredAt,
+            status: updated.status,
+            customerEmail,
+          });
+        } catch (error) {
+          console.error("Failed to send receipt email:", error);
+          // Log to database for retry later
+          await prisma.paymentLog.create({
+            data: {
+              orderId: updated.id,
+              event: "EMAIL_FAILED",
+              status: "ERROR",
+              metadata: JSON.stringify({ error: String(error) }),
+            },
+          }).catch(() => {});
+        }
+      });
     }
   }
 

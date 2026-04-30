@@ -493,7 +493,7 @@ async function releaseWalletReservation(orderId: string) {
   }
 }
 
-// ===================== Delivery Function (Idempotent) =====================
+// ===================== Delivery Function (Idempotent + Fail-Safe) =====================
 async function deliverOrder(order: {
   id: string;
   orderNumber: string;
@@ -505,7 +505,18 @@ async function deliverOrder(order: {
   const startTime = Date.now();
 
   try {
+    // Check if already delivered (idempotency)
+    const existingOrder = await prisma.order.findUnique({
+      where: { id: order.id },
+      select: { status: true, deliveredAt: true },
+    });
+
+    if (existingOrder?.status === "DELIVERED") {
+      return { success: true, durationMs: 0 };
+    }
+
     // TODO: Replace with actual game top-up API
+    // CRITICAL: This must be idempotent - safe to retry
     // Example:
     // const result = await callGameApi({
     //   gameSlug: order.game.slug,
@@ -513,6 +524,7 @@ async function deliverOrder(order: {
     //   serverId: order.serverId,
     //   amount: order.product.amount,
     //   orderNumber: order.orderNumber,
+    //   idempotencyKey: order.orderNumber, // API should respect this
     // });
 
     // Simulate API call (remove in production)
@@ -522,6 +534,8 @@ async function deliverOrder(order: {
 
     return { success: true, durationMs };
   } catch (err) {
+    // Log error but don't throw - let retry logic handle it
+    console.error(`[delivery] Order ${order.orderNumber} failed:`, err);
     return {
       success: false,
       error: err instanceof Error ? err.message : "Unknown delivery error",

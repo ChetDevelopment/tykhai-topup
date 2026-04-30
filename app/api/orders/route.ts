@@ -90,16 +90,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Idempotency check
+    // Idempotency check (use paymentRefEnc for better security)
     if (data.idempotencyKey) {
       const existingOrder = await prisma.order.findFirst({
-        where: { paymentRef: data.idempotencyKey },
+        where: {
+          OR: [
+            { paymentRef: data.idempotencyKey },
+            { paymentRefEnc: hashSha256(data.idempotencyKey).slice(0, 64) },
+          ],
+        },
       });
       if (existingOrder) {
         return NextResponse.json({
           orderNumber: existingOrder.orderNumber,
           duplicate: true,
-          redirectUrl: `${baseUrl}/order?number=${existingOrder.orderNumber}`,
+          status: existingOrder.status,
+          redirectUrl: existingOrder.status === "PENDING"
+            ? `${baseUrl}/checkout/${existingOrder.orderNumber}`
+            : `${baseUrl}/order?number=${existingOrder.orderNumber}`,
         });
       }
     }
@@ -229,17 +237,26 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Wallet payment: deduct from balance
+    // Wallet payment: deduct from balance (ATOMIC with gte guard)
     let walletDeducted = false;
     if (data.paymentMethod === "WALLET" && user && finalPrice > 0) {
-      const walletBalance = user.walletBalance || 0;
-      if (walletBalance >= finalPrice) {
-        walletDeducted = true;
-        await prisma.user.update({
-          where: { id: user.userId },
-          data: { walletBalance: { decrement: finalPrice } },
-        });
+      // Atomic update: only deduct if balance >= finalPrice
+      const walletUpdate = await prisma.user.updateMany({
+        where: {
+          id: user.userId,
+          walletBalance: { gte: finalPrice },
+        },
+        data: { walletBalance: { decrement: finalPrice } },
+      });
+
+      if (walletUpdate.count === 0) {
+        // Insufficient balance - return error
+        return NextResponse.json(
+          { error: "Insufficient wallet balance" },
+          { status: 400 }
+        );
       }
+      walletDeducted = true;
     }
 
     // Encrypt sensitive data

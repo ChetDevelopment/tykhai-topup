@@ -7,10 +7,20 @@ const TAG_LENGTH = 16; // 128 bits
 const SALT_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {
-  const secret = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET;
-  if (!secret || secret.length < 32) {
-    throw new Error("ENCRYPTION_KEY must be set and at least 32 characters long");
+  const secret = process.env.ENCRYPTION_KEY;
+  
+  if (!secret) {
+    throw new Error("FATAL: ENCRYPTION_KEY environment variable is required");
   }
+  
+  if (secret.length < 32) {
+    throw new Error("FATAL: ENCRYPTION_KEY must be at least 32 characters long");
+  }
+  
+  if (secret === "development_secret_key_at_least_32_characters_long") {
+    throw new Error("FATAL: Default development ENCRYPTION_KEY detected. Set a unique key for production");
+  }
+  
   // Derive a 256-bit key from the secret
   return crypto.createHash("sha256").update(secret).digest();
 }

@@ -13,11 +13,20 @@ const USER_COOKIE = "tykhai_user";
 const SESSION_TTL = 60 * 60 * 24 * 7; // 7 days
 
 function getSecret() {
-  const secret = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET || (process.env.NODE_ENV === "development" ? "development_secret_key_at_least_32_characters_long" : null);
+  const secret = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET;
   
-  if (!secret || secret.length < 32) {
-    throw new Error("JWT_SECRET or NEXTAUTH_SECRET must be set and at least 32 characters");
+  if (!secret) {
+    throw new Error("FATAL: JWT_SECRET or NEXTAUTH_SECRET environment variable is required");
   }
+  
+  if (secret.length < 32) {
+    throw new Error("FATAL: JWT_SECRET must be at least 32 characters long");
+  }
+  
+  if (secret === "development_secret_key_at_least_32_characters_long") {
+    throw new Error("FATAL: Default development secret detected. Set a unique JWT_SECRET for production");
+  }
+  
   return new TextEncoder().encode(secret);
 }
 
