@@ -259,6 +259,11 @@ export async function POST(req: NextRequest) {
       walletDeducted = true;
     }
 
+    // Sanitize inputs before DB insert (prevent injection attacks)
+    const sanitizedUid = data.playerUid?.trim().replace(/[<>\"\'%;()&+\\]/g, "") || "";
+    const sanitizedServerId = data.serverId?.trim().replace(/[<>\"\'%;()&+\\]/g, "") || null;
+    const sanitizedNickname = data.playerNickname?.trim().replace(/[<>\"\'%;()&+\\]/g, "").slice(0, 100) || null;
+
     // Encrypt sensitive data
     const encryptedEmail = encryptField(data.customerEmail);
     const encryptedPhone = encryptField(data.customerPhone);
@@ -269,9 +274,9 @@ export async function POST(req: NextRequest) {
         orderNumber,
         gameId: game.id,
         productId: product.id,
-        playerUid: data.playerUid,
-        serverId: data.serverId,
-        playerNickname: data.playerNickname,
+        playerUid: sanitizedUid,
+        serverId: sanitizedServerId,
+        playerNickname: sanitizedNickname,
         customerEmail: encryptedEmail,
         customerPhone: encryptedPhone,
         amountUsd: finalPrice,
