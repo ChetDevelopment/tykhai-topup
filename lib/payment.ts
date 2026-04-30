@@ -181,7 +181,7 @@ export async function checkBakongPayment(
     const result = await khqr.get_payment(refToCheck);
 
     if (!result) {
-      return { status: "UNPAID", paid: false };
+      return { status: "PENDING", paid: false };
     }
 
     // Verify receiver account matches our merchant account
@@ -197,17 +197,16 @@ export async function checkBakongPayment(
         provider: "BAKONG",
         details: { expected: BAKONG_ACCOUNT, received: receiverAccount },
       });
-      return { status: "WRONG_RECEIVER", paid: false };
+      return { status: "FAILED", paid: false };
     }
 
     return {
-      status: "PAID",
+      status: "PROCESSING",
       paid: true,
-      amount: result.amount?.toString(),
+      amount: result.amount ? parseFloat(String(result.amount)) : undefined,
       currency: result.currency,
       receiverAccount,
-      transactionId: result.transactionId || undefined,
-      paidAt: result.paidAt ? new Date(result.paidAt) : new Date(),
+      paidAt: result.acknowledgedDateMs ? new Date(result.acknowledgedDateMs) : new Date(),
       rawResponse: result,
     };
   });
@@ -382,6 +381,22 @@ export async function processSuccessfulPayment(orderId: string, paymentData: {
 
   if (!order || order.status === "DELIVERED") {
     return order;
+  }
+
+  // Release wallet reservation if exists
+  const reservation = await prisma.walletReservation.findFirst({
+    where: { orderId: order.id, status: "ACTIVE" },
+  });
+  if (reservation) {
+    await prisma.walletReservation.update({
+      where: { id: reservation.id },
+      data: { status: "CONSUMED" },
+    });
+    // Decrement reserved balance in settings
+    await prisma.settings.update({
+      where: { id: 1 },
+      data: { reservedBalance: { decrement: reservation.amount } },
+    });
   }
 
   // Update order status

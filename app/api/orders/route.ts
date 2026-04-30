@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { generateOrderNumber, isValidUid, calcKhr } from "@/lib/utils";
-import { initiatePayment, PaymentMethod, PaymentCurrency } from "@/lib/payment";
+import { initiatePayment } from "@/lib/payment";
+import { PaymentMethod, PaymentCurrency } from "@/lib/payment-types";
 import { getCurrentUser, updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -59,6 +60,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Check system status (balance-based pause)
+    if (maintSettings?.systemStatus === "PAUSED") {
+      const msg = maintSettings.pauseReason === "LOW_BALANCE"
+        ? "Top-up service temporarily unavailable due to low balance. Please try again later."
+        : maintSettings.maintenanceMessage || "Service temporarily unavailable. Please try again later.";
+      return NextResponse.json({ error: msg }, { status: 503 });
+    }
+
     // Check banlist
     const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
     const userAgent = req.headers.get("user-agent") ?? "unknown";
@@ -67,7 +76,7 @@ export async function POST(req: NextRequest) {
       { type: "phone" as const, value: data.customerPhone?.toLowerCase() },
       { type: "ip" as const, value: ipAddress.toLowerCase() },
       { type: "uid" as const, value: data.playerUid.toLowerCase() },
-    ].filter((c): c is { type: string; value: string } => !!c.value);
+    ].filter((c): c is { type: "email" | "phone" | "ip" | "uid"; value: string } => !!c.value);
 
     if (banCandidates.length > 0) {
       const blocked = await prisma.blockedIdentity.findFirst({
@@ -209,6 +218,17 @@ export async function POST(req: NextRequest) {
       discountUsd = Math.round((discountUsd + pointsDiscount) * 100) / 100;
     }
 
+    // Balance check for non-wallet orders (GameDrop balance protection)
+    if (maintSettings?.systemMode !== "FORCE_OPEN" && data.paymentMethod !== "WALLET") {
+      const available = (settings?.currentBalance || 0) - (settings?.reservedBalance || 0);
+      if (available < finalPrice) {
+        return NextResponse.json(
+          { error: "Insufficient system balance to fulfill order. Please try again later." },
+          { status: 503 }
+        );
+      }
+    }
+
     // Wallet payment: deduct from balance
     let walletDeducted = false;
     if (data.paymentMethod === "WALLET" && user && finalPrice > 0) {
@@ -251,6 +271,24 @@ export async function POST(req: NextRequest) {
         userId: user?.userId,
       },
     });
+
+    // Reserve balance for non-wallet orders
+    if (data.paymentMethod !== "WALLET" && settings?.systemMode !== "FORCE_OPEN") {
+      await prisma.settings.update({
+        where: { id: 1 },
+        data: { reservedBalance: { increment: finalPrice } },
+      });
+      await prisma.walletReservation.create({
+        data: {
+          userId: user?.userId || "",
+          amount: finalPrice,
+          currency: data.currency,
+          status: "ACTIVE",
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min
+          orderId: order.id,
+        },
+      });
+    }
 
     // Handle wallet payment - no gateway needed
     if (walletDeducted) {

@@ -1,10 +1,7 @@
 // Prisma schema for Ty Khai TopUp
-// Local dev: sqlite (file:./dev.db)
-// Production (Vercel/Neon): change provider to "postgresql" and run `prisma db push`
+// Production: PostgreSQL on Neon
 generator client {
   provider      = "prisma-client-js"
-  // Vercel lambdas run on Amazon Linux 2023 (openssl 3.0). Without this the
-  // generated engine binary won't load in production.
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
@@ -21,11 +18,10 @@ model Game {
   description String?
   imageUrl    String
   bannerUrl   String?
-  currencyName String   // e.g. "Diamonds", "UC", "Genesis Crystals"
+  currencyName String
   uidLabel    String   @default("Player ID")
-  uidExample  String?  // e.g. "12345678 (1234)"
+  uidExample  String?
   requiresServer Boolean @default(false)
-  // JSON-encoded string array (SQLite has no native array type)
   servers     String    @default("[]")
   featured    Boolean   @default(false)
   active      Boolean   @default(true)
@@ -43,18 +39,18 @@ model Product {
   id          String   @id @default(cuid())
   gameId      String
   game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  name        String   // e.g. "86 Diamonds"
-  amount      Int      // 86
-  bonus       Int      @default(0) // bonus diamonds
-  priceUsd    Float    // price in USD
-  resellerPriceUsd Float? // Wholesale price for agents
-  officialPriceUsd Float? // For Price Match Ticker
-  priceKhr    Float?   // price in Cambodian Riel (optional auto-calc)
-  salePriceUsd Float?   // Flash sale price
-  saleEndsAt   DateTime? // When flash sale ends
+  name        String
+  amount      Int
+  bonus       Int      @default(0)
+  priceUsd    Float
+  resellerPriceUsd Float?
+  officialPriceUsd Float?
+  priceKhr    Float?
+  salePriceUsd Float?
+  saleEndsAt   DateTime?
   isMysteryBox  Boolean  @default(false)
   isSubscriptionAvailable Boolean @default(false)
-  badge       String?  // "Best Value", "Hot", "New"
+  badge       String?
   imageUrl    String?
   active      Boolean  @default(true)
   sortOrder   Int      @default(0)
@@ -72,29 +68,29 @@ model Product {
 
 model Order {
   id                 String       @id @default(cuid())
-  orderNumber        String       @unique // human-friendly: TY-XXXXXX
+  orderNumber        String       @unique
   gameId             String
   game               Game         @relation(fields: [gameId], references: [id])
   productId          String
   product            Product      @relation(fields: [productId], references: [id])
   playerUid          String
   serverId           String?
-  playerNickname     String?      // optional nickname pulled after validation
-  customerEmail      String?      // Encrypted with encryptField()
-  customerPhone      String?      // Encrypted with encryptField()
+  playerNickname     String?
+  customerEmail      String?
+  customerPhone      String?
   amountUsd          Float
   amountKhr          Float?
   currency           String       @default("USD")
-  paymentMethod      String       // BAKONG | WALLET | TRUEMONEY | WING | BANK | USDT
-  paymentRef         String?      // SHA256 hash (encrypted in transit)
-  paymentRefEnc      String?      // Encrypted payment reference for extra security
-  paymentUrl         String?      // Encrypted (contains sensitive gateway data)
-  qrString           String?      // Encrypted (KHQR contains sensitive data)
-  paymentExpiresAt   DateTime?    // QR/payment expiry time
-  status             String       @default("PENDING") // PENDING | PAID | PROCESSING | DELIVERED | FAILED | REFUNDED | CANCELLED | REFUND_REQUIRED
-  deliveryNote       String?      // admin notes about delivery
+  paymentMethod      String
+  paymentRef         String?
+  paymentRefEnc      String?
+  paymentUrl         String?
+  qrString           String?
+  paymentExpiresAt   DateTime?
+  status             String       @default("PENDING")
+  deliveryNote       String?
   failureReason      String?
-  ipAddress          String?      // Encrypted for privacy
+  ipAddress          String?
   userAgent          String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
@@ -108,51 +104,49 @@ model Order {
   isSubscription     Boolean      @default(false)
   squadPoolId        String?
   squadPool          SquadPool?   @relation(fields: [squadPoolId], references: [id])
-  
-  // New fields for production-grade system
+
   deliveryAttempts  Int          @default(0)
   maxDeliveryAttempts Int          @default(3)
   lastDeliveryAt    DateTime?
-  nextDeliveryAt    DateTime?    // For retry scheduling
-  walletReserved    Float        @default(0) // Amount reserved from wallet (not yet deducted)
-  refundStatus      String?      // PENDING | PROCESSING | COMPLETED | FAILED
+  nextDeliveryAt    DateTime?
+  walletReserved    Float        @default(0)
+  refundStatus      String?
   refundReason      String?
   refundAmount      Float?
   refundAt          DateTime?
-  fraudScore        Float        @default(0) // 0-100 risk score
-  fraudFlags        String       @default("[]") // JSON array of fraud flags
-  idempotencyKey    String?      @unique // For idempotent operations
-  
+  fraudScore        Float        @default(0)
+  fraudFlags        String       @default("[]")
+  idempotencyKey    String?      @unique
+
   userId             String?
-  user               User?        @relation(fields: [userId], references: [id])
+  user               User?        @relation(fields: [userId], references: [id], name: "OrderUser")
   review             Review?
   tickets            Ticket[]
-  paymentLogs        PaymentLog[]    // New: structured payment logs
-  deliveryLogs      DeliveryLog[]  // New: structured delivery logs
-  auditLogs         AuditLog[]     // New: structured audit logs
-  refunds            Refund[]       // New: refund records
+  paymentLogs        PaymentLog[]
+  deliveryLogs      DeliveryLog[]
+  refunds            Refund[]       @relation("OrderRefunds")
+  walletReservations WalletReservation[] @relation("OrderWalletReservations")
+  fraudFlags2       FraudFlag[]    @relation("OrderFraudFlags")
 
   @@index([status])
   @@index([createdAt])
   @@index([customerEmail])
 }
 
-// ===================== New Models for Production System =====================
-
 model PaymentLog {
   id                String   @id @default(cuid())
   orderId           String
   order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  event             String   // INITIATED | VERIFIED | AMOUNT_MISMATCH | FAILED | RETRY
+  event             String
   status            String
   paymentRef        String?
   amount            Float?
   currency          String?
-  provider          String?  // BAKONG | WALLET | etc.
+  provider          String?
   responseCode      String?
   responseMessage   String?
-  rawResponse       String?  // Encrypted
-  metadata         String   @default("{}") // JSON
+  rawResponse       String?
+  metadata         String   @default("{}")
   createdAt         DateTime @default(now())
 
   @@index([orderId])
@@ -164,12 +158,12 @@ model DeliveryLog {
   orderId           String
   order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   attemptNumber     Int      @default(1)
-  status            String   // PENDING | SUCCESS | FAILED | RETRY
-  deliveryMethod    String?  // API | MANUAL | BATCH
-  requestPayload    String?  // Encrypted
-  responsePayload   String?  // Encrypted
+  status            String
+  deliveryMethod    String?
+  requestPayload    String?
+  responsePayload   String?
   errorMessage      String?
-  durationMs        Int?     // How long delivery took
+  durationMs        Int?
   nextRetryAt       DateTime?
   createdAt         DateTime @default(now())
 
@@ -179,12 +173,12 @@ model DeliveryLog {
 
 model AuditLog {
   id          String   @id @default(cuid())
-  adminEmail  String?
-  action      String   // order.mark_paid | payment.verified | delivery.success
-  targetType  String?  // order | payment | delivery
+  adminEmail String?
+  action      String
+  targetType String?
   targetId    String?
-  details     String?  // JSON
-  ipAddress   String?  // Encrypted
+  details     String?
+  ipAddress   String?
   userAgent   String?
   createdAt   DateTime @default(now())
 
@@ -195,15 +189,15 @@ model AuditLog {
 model Refund {
   id              String   @id @default(cuid())
   orderId         String
-  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order           Order     @relation("OrderRefunds", fields: [orderId], references: [id], onDelete: Cascade)
   userId          String?
-  user            User?     @relation(fields: [userId], references: [id])
+  user            User?     @relation("UserRefunds", fields: [userId], references: [id])
   amount          Float
   currency        String   @default("USD")
   reason          String?
-  status          String   @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
-  refundMethod    String?  // WALLET | BANK | ORIGINAL_PAYMENT
-  transactionId   String?  // External refund transaction ID
+  status          String   @default("PENDING")
+  refundMethod    String?
+  transactionId   String?
   processorFee    Float?
   netAmount       Float?
   requestedAt     DateTime @default(now())
@@ -218,12 +212,12 @@ model Refund {
 model WalletReservation {
   id              String   @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User     @relation("UserWalletReservations", fields: [userId], references: [id], onDelete: Cascade)
   orderId         String?
-  order           Order?    @relation(fields: [orderId], references: [id])
+  order           Order?    @relation("OrderWalletReservations", fields: [orderId], references: [id])
   amount          Float
   currency        String   @default("USD")
-  status          String   @default("ACTIVE") // ACTIVE | CONSUMED | EXPIRED | CANCELLED
+  status          String   @default("ACTIVE")
   expiresAt       DateTime
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -236,13 +230,13 @@ model WalletReservation {
 model FraudFlag {
   id              String   @id @default(cuid())
   orderId         String?
-  order           Order?    @relation(fields: [orderId], references: [id])
+  order           Order?    @relation("OrderFraudFlags", fields: [orderId], references: [id])
   userId          String?
-  user            User?    @relation(fields: [userId], references: [id])
-  type            String   // HIGH_FREQUENCY | SAME_UID_MULTI_ACCOUNT | ABNORMAL_AMOUNT | SUSPICIOUS_PATTERN
-  severity        String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  user            User?    @relation("UserFraudFlags", fields: [userId], references: [id])
+  type            String
+  severity        String   @default("MEDIUM")
   description     String?
-  metadata        String?  // JSON
+  metadata        String?
   isResolved      Boolean  @default(false)
   resolvedById    String?
   resolvedBy      User?    @relation("FraudResolver", fields: [resolvedById], references: [id])
@@ -256,10 +250,10 @@ model FraudFlag {
 model PromoCode {
   id            String    @id @default(cuid())
   code          String    @unique
-  discountType  String    // PERCENT | FIXED
-  discountValue Float     // e.g. 10 for 10% or 0.50 for $0.50
+  discountType  String
+  discountValue Float
   minOrderUsd   Float     @default(0)
-  maxUses       Int       @default(0) // 0 = unlimited
+  maxUses       Int       @default(0)
   usedCount     Int       @default(0)
   expiresAt     DateTime?
   active        Boolean   @default(true)
@@ -273,7 +267,7 @@ model Admin {
   email        String   @unique
   passwordHash String
   name         String?
-  role         String    @default("ADMIN") // ADMIN | SUPERADMIN
+  role         String    @default("ADMIN")
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   lastLoginAt  DateTime?
@@ -282,20 +276,49 @@ model Admin {
 model Settings {
   id          Int      @id @default(1)
   siteName    String   @default("Ty Khai TopUp")
-  exchangeRate Float   @default(4100) // KHR per 1 USD
+  exchangeRate Float   @default(4100)
   supportTelegram String? @default("@Vichet_SAT")
   supportEmail String? @default("support@tykhai.com")
   maintenanceMode Boolean @default(false)
   maintenanceMessage String?
   announcement String?
-  announcementTone String? @default("info") // info | warning | promo
+  announcementTone String? @default("info")
   popupActive      Boolean @default(false)
   popupTitle       String?
   popupContent     String?
   popupImageUrl     String?
-  telegramBotToken String?  // Encrypt with encryptField()
-  telegramChatId   String?  // Encrypt with encryptField()
+  telegramBotToken String?
+  telegramChatId   String?
   updatedAt   DateTime @updatedAt
+
+  // System Control
+  systemStatus      String   @default("ACTIVE")
+  pauseReason       String?
+  systemMode        String   @default("AUTO")
+
+  // Balance Monitoring
+  balanceCheckInterval Int     @default(5)
+  warningThreshold  Float?   @default(20.0)
+  criticalThreshold Float?   @default(5.0)
+  lastBalanceCheck  DateTime?
+  currentBalance    Float?
+  reservedBalance   Float    @default(0)
+  alertCooldownMinutes Int   @default(15)
+  lastAlertSentAt   DateTime?
+  gameDropToken     String?
+  gameDropPartnerId Int?
+}
+
+model BalanceLog {
+  id        String   @id @default(cuid())
+  balance    Float
+  reserved   Float    @default(0)
+  available  Float
+  threshold  String?
+  source     String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model HeroBanner {
@@ -316,7 +339,7 @@ model Faq {
   question  String
   answer    String
   category  String   @default("general")
-  active    Boolean  @default(true)
+  active    Boolean   @default(true)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -327,7 +350,7 @@ model BlogPost {
   slug        String    @unique
   title       String
   excerpt     String?
-  content     String    // plain text / lightweight HTML
+  content     String
   coverUrl    String?
   tag         String?
   published   Boolean   @default(false)
@@ -338,22 +361,9 @@ model BlogPost {
   @@index([published, publishedAt])
 }
 
-model AuditLog {
-  id         String   @id @default(cuid())
-  adminEmail String?
-  action     String   // e.g. order.mark_paid, banner.create, game.update
-  targetType String?  // order | game | banner | faq | blog | banlist | settings
-  targetId   String?
-  details    String?  // JSON-encoded metadata
-  createdAt  DateTime @default(now())
-
-  @@index([createdAt])
-  @@index([targetType, targetId])
-}
-
 model BlockedIdentity {
   id        String   @id @default(cuid())
-  type      String   // email | phone | ip | uid
+  type      String
   value     String
   reason    String?
   createdAt DateTime @default(now())
@@ -363,21 +373,21 @@ model BlockedIdentity {
 
 model User {
   id            String    @id @default(cuid())
-  email         String    @unique // Encrypt with encryptField() before save
+  email         String    @unique
   emailVerified DateTime?
   passwordHash  String?
-  name          String?  // Consider encrypt
+  name          String?
   image         String?
-  role          String      @default("USER") // USER | RESELLER | RESELLER_PENDING | SUB_RESELLER
+  role          String    @default("USER")
   pointsBalance Int       @default(0)
   walletBalance Float     @default(0)
-  totalSpentUsd Float       @default(0)
-  vipRank       String      @default("BRONZE") // BRONZE, SILVER, GOLD, DIAMOND_LEGEND
-  resellerTier  String?    // BRONZE | SILVER | GOLD for resellers
-  resellerDiscount Float   @default(0) // wholesale discount %
+  totalSpentUsd Float     @default(0)
+  vipRank       String    @default("BRONZE")
+  resellerTier  String?
+  resellerDiscount Float   @default(0)
   parentResellerId String?
-  parentReseller   User?     @relation("ResellerNetwork", fields: [parentResellerId], references: [id])
-  subResellers    User[]    @relation("ResellerNetwork")
+  parentReseller   User?  @relation("ResellerNetwork", fields: [parentResellerId], references: [id])
+  subResellers    User[]  @relation("ResellerNetwork")
   referredById   String?
   referredBy    User?     @relation("ReferralNetwork", fields: [referredById], references: [id])
   referrer      User[]    @relation("ReferralNetwork")
@@ -386,10 +396,14 @@ model User {
   accounts      Account[]
   sessions      Session[]
   savedUids     SavedUid[]
-  orders        Order[]
+  orders        Order[]    @relation("OrderUser")
   points        PointTransaction[]
   subscriptions Subscription[]
-  tickets       Ticket[]
+  tickets       Ticket[]  @relation("UserTickets")
+  refunds            Refund[]           @relation("UserRefunds")
+  walletReservations WalletReservation[] @relation("UserWalletReservations")
+  fraudFlags        FraudFlag[]        @relation("UserFraudFlags")
+  resolvedFlags     FraudFlag[]        @relation("FraudResolver")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -407,9 +421,7 @@ model Account {
   scope             String?
   id_token          String?
   session_state     String?
-
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@unique([provider, providerAccountId])
 }
 
@@ -425,7 +437,6 @@ model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
-
   @@unique([identifier, token])
 }
 
@@ -437,7 +448,6 @@ model SavedUid {
   user      User     @relation(fields: [userId], references: [id])
   game      Game     @relation(fields: [gameId], references: [id])
   createdAt DateTime @default(now())
-
   @@unique([userId, gameId, playerUid])
 }
 
@@ -458,8 +468,8 @@ model PointTransaction {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount    Int      // positive for earned, negative for spent
-  type      String   // PURCHASE | REFERRAL | REDEEM | ADMIN
+  amount    Int
+  type      String
   orderId   String?
   createdAt DateTime @default(now())
 }
@@ -470,7 +480,7 @@ model SquadPool {
   leaderId    String
   targetSize  Int      @default(5)
   currentSize Int      @default(1)
-  status      String   @default("OPEN") // OPEN, COMPLETED, EXPIRED
+  status      String   @default("OPEN")
   expiresAt   DateTime
   orders      Order[]
   createdAt   DateTime @default(now())
@@ -480,9 +490,9 @@ model MysteryBoxReward {
   id          String   @id @default(cuid())
   productId   String
   product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  name        String   // e.g. "500 Diamonds"
+  name        String
   amount      Int
-  probability Float    // e.g. 0.01 for 1%
+  probability Float
   isJackpot   Boolean  @default(false)
 }
 
@@ -504,7 +514,6 @@ model Wishlist {
   productId String
   product    Product   @relation(fields: [productId], references: [id])
   createdAt DateTime  @default(now())
-
   @@unique([userId, productId])
 }
 
@@ -517,7 +526,6 @@ model PriceAlert {
   notified    Boolean  @default(false)
   createdAt   DateTime @default(now())
   expiresAt   DateTime?
-
   @@unique([userId, productId])
 }
 
@@ -525,9 +533,9 @@ model Bundle {
   id          String    @id @default(cuid())
   name        String
   description String?
-  products    String    // JSON array of product IDs
-  bundlePrice Float     // discounted price
-  originalPrice Float    // sum of individual prices
+  products    String
+  bundlePrice Float
+  originalPrice Float
   badge       String?
   active      Boolean   @default(true)
   expiresAt   DateTime?
@@ -538,8 +546,8 @@ model Bundle {
 model SpinWin {
   id          String   @id @default(cuid())
   userId     String
-  prize      String   // "50_points", "$5_discount", "free_diamond"
-  prizeValue Int      // 50 or 500 (cents for $5)
+  prize      String
+  prizeValue Int
   won        Boolean  @default(true)
   claimed    Boolean  @default(false)
   createdAt  DateTime  @default(now())
@@ -548,13 +556,13 @@ model SpinWin {
 model Ticket {
   id          String    @id @default(cuid())
   userId      String?
-  user        User?     @relation(fields: [userId], references: [id])
+  user        User?     @relation("UserTickets", fields: [userId], references: [id])
   orderId     String?
   order       Order?    @relation(fields: [orderId], references: [id])
   subject     String
-  category    String    // ORDER_ISSUE | REFUND | GENERAL | BUG
-  status      String    @default("OPEN") // OPEN | IN_PROGRESS | RESOLVED | CLOSED
-  priority    String    @default("NORMAL") // LOW | NORMAL | HIGH | URGENT
+  category    String
+  status      String    @default("OPEN")
+  priority    String    @default("NORMAL")
   message     String
   response    String?
   adminId     String?

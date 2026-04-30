@@ -21,19 +21,29 @@ const settingsSchema = z.object({
   popupImageUrl: z.string().nullable().optional(),
   telegramBotToken: z.string().nullable().optional(),
   telegramChatId: z.string().nullable().optional(),
+  // New fields for balance monitoring
+  gameDropToken: z.string().nullable().optional(),
+  systemMode: z.enum(["AUTO", "FORCE_OPEN", "FORCE_CLOSE"]).optional(),
+  warningThreshold: z.number().positive().optional(),
+  criticalThreshold: z.number().positive().optional(),
+  balanceCheckInterval: z.number().int().min(1).max(60).optional(),
+  alertCooldownMinutes: z.number().int().min(1).max(60).optional(),
 });
 
 function readSecret(value: string | null | undefined) {
   return decryptField(value) ?? value ?? null;
 }
 
-function serializeSettings<T extends { telegramBotToken?: string | null; telegramChatId?: string | null }>(
-  settings: T
-) {
+function serializeSettings<T extends {
+  telegramBotToken?: string | null;
+  telegramChatId?: string | null;
+  gameDropToken?: string | null;
+}>(settings: T) {
   return {
     ...settings,
     telegramBotToken: readSecret(settings.telegramBotToken),
     telegramChatId: readSecret(settings.telegramChatId),
+    gameDropToken: readSecret(settings.gameDropToken),
   };
 }
 
@@ -67,6 +77,9 @@ export async function PATCH(req: NextRequest) {
       : {}),
     ...("telegramChatId" in parsed.data
       ? { telegramChatId: encryptField(parsed.data.telegramChatId) }
+      : {}),
+    ...("gameDropToken" in parsed.data
+      ? { gameDropToken: encryptField(parsed.data.gameDropToken) }
       : {}),
   };
 

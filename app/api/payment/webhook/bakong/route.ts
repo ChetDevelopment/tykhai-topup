@@ -5,8 +5,8 @@ import {
   checkBakongPayment,
   validatePaymentAmount,
   processSuccessfulPayment,
-  PaymentError,
 } from "@/lib/payment";
+import { PaymentError } from "@/lib/payment-types";
 import { notifyTelegram, escapeHtml } from "@/lib/telegram";
 import { updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
 
     // CRITICAL: Verify paid amount matches order amount
     if (result.amount) {
-      const paidAmount = parseFloat(result.amount);
+      const paidAmount = parseFloat(String(result.amount));
       const exchangeRate = await getExchangeRate();
 
       const { valid, expected } = validatePaymentAmount(
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
     // Process the successful payment
     await processSuccessfulPayment(order.id, {
       paymentRef: secureRef,
-      amount: result.amount ? parseFloat(result.amount) : order.amountUsd,
+      amount: result.amount ? parseFloat(String(result.amount)) : order.amountUsd,
       currency: result.currency || order.currency,
       transactionId: result.transactionId,
     });

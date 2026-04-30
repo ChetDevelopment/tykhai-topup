@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Save } from "lucide-react";
+import { Save, Pause, Play, TestTube } from "lucide-react";
 
 export default function AdminSettingsPage() {
   const [form, setForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<any>(null);
 
   useEffect(() => {
     fetch("/api/admin/settings")
@@ -32,11 +34,37 @@ export default function AdminSettingsPage() {
         announcementTone: form.announcementTone || "info",
         telegramBotToken: form.telegramBotToken || null,
         telegramChatId: form.telegramChatId || null,
+        gameDropToken: form.gameDropToken || null,
+        systemMode: form.systemMode || "AUTO",
+        warningThreshold: form.warningThreshold || 20,
+        criticalThreshold: form.criticalThreshold || 5,
+        balanceCheckInterval: form.balanceCheckInterval || 5,
+        alertCooldownMinutes: form.alertCooldownMinutes || 15,
       }),
     });
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  }
+
+  async function testGameDrop() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/admin/gamedrop/test", { method: "POST" });
+      const data = await res.json();
+      setTestResult(data);
+    } catch (err: any) {
+      setTestResult({ error: err.message });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function toggleSystem(action: "pause" | "resume") {
+    await fetch("/api/admin/system/" + action, { method: "POST" });
+    const updated = await fetch("/api/admin/settings").then((r) => r.json());
+    setForm(updated);
   }
 
   if (!form) return <div className="p-8 text-royal-muted">Loading...</div>;
@@ -139,6 +167,132 @@ export default function AdminSettingsPage() {
                 value={form.telegramChatId || ""}
                 onChange={(e) => setForm({ ...form, telegramChatId: e.target.value })}
                 placeholder="-1001234567890"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* GameDrop API Config */}
+        <div className="pt-4 border-t border-royal-border">
+          <h2 className="font-semibold mb-1">GameDrop API</h2>
+          <p className="text-xs text-royal-muted mb-3">Configure GameDrop reseller API for balance monitoring.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">API Token (encrypted)</label>
+              <input
+                className="input font-mono text-xs"
+                type="password"
+                value={form.gameDropToken || ""}
+                onChange={(e) => setForm({ ...form, gameDropToken: e.target.value })}
+                placeholder="Enter GameDrop Shop API Token"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={testGameDrop}
+                disabled={testing}
+                className="btn-secondary text-xs"
+              >
+                {testing ? "Testing..." : "Test Connection"}
+              </button>
+              {testResult && (
+                <span className={`text-xs ml-2 ${testResult.success ? "text-green-400" : "text-red-400"}`}>
+                  {testResult.success ? `✓ Balance: $${testResult.balance}` : `✗ ${testResult.error}`}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* System Control */}
+        <div className="pt-4 border-t border-royal-border">
+          <h2 className="font-semibold mb-1">System Control</h2>
+          <div className="card p-4 mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <div className="font-medium">System Status</div>
+                <div className="text-xs text-royal-muted">
+                  {form.systemStatus === "ACTIVE" ? "✅ Active — Accepting orders" : "⚠️ Paused — No new orders"}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                {form.systemStatus === "ACTIVE" ? (
+                  <button type="button" onClick={() => toggleSystem("pause")} className="btn-secondary text-xs">
+                    <Pause className="w-3 h-3 mr-1" /> Pause
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => toggleSystem("resume")} className="btn-primary text-xs">
+                    <Play className="w-3 h-3 mr-1" /> Resume
+                  </button>
+                )}
+              </div>
+            </div>
+            {form.pauseReason && (
+              <div className="text-xs text-royal-muted">Pause reason: {form.pauseReason}</div>
+            )}
+            {form.currentBalance !== null && (
+              <div className="text-xs text-royal-muted mt-1">
+                Current Balance: ${form.currentBalance?.toFixed(2) || "0.00"}
+                {form.lastBalanceCheck && (
+                  <span className="ml-2">(checked {new Date(form.lastBalanceCheck).toLocaleTimeString()})</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-3 mb-3">
+            <div>
+              <label className="label">System Mode</label>
+              <select
+                className="input"
+                value={form.systemMode || "AUTO"}
+                onChange={(e) => setForm({ ...form, systemMode: e.target.value })}
+              >
+                <option value="AUTO">Auto (react to balance)</option>
+                <option value="FORCE_OPEN">Force Open (ignore balance)</option>
+                <option value="FORCE_CLOSE">Force Close (always paused)</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Warning Threshold ($)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                value={form.warningThreshold || 20}
+                onChange={(e) => setForm({ ...form, warningThreshold: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">Critical Threshold ($)</label>
+              <input
+                className="input"
+                type="number"
+                step="0.01"
+                value={form.criticalThreshold || 5}
+                onChange={(e) => setForm({ ...form, criticalThreshold: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">Balance Check Interval (minutes)</label>
+              <input
+                className="input"
+                type="number"
+                value={form.balanceCheckInterval || 5}
+                onChange={(e) => setForm({ ...form, balanceCheckInterval: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label">Alert Cooldown (minutes)</label>
+              <input
+                className="input"
+                type="number"
+                value={form.alertCooldownMinutes || 15}
+                onChange={(e) => setForm({ ...form, alertCooldownMinutes: e.target.value })}
               />
             </div>
           </div>

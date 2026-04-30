@@ -45,7 +45,7 @@ export async function GET(
         const { valid, expected, paid: paidAmount, currency } = validatePaymentAmount(
           order.amountUsd,
           order.currency,
-          remote.amount ? parseFloat(remote.amount) : 0,
+          remote.amount ? parseFloat(String(remote.amount)) : 0,
           orderAmountKhrForValidation
         );
 
@@ -76,15 +76,15 @@ export async function GET(
         if (canTransition(order.status as any, "DELIVERED")) {
           order = await processSuccessfulPayment(order.id, {
             paymentRef: order.paymentRef,
-            amount: remote.amount ? parseFloat(remote.amount) : order.amountUsd,
+            amount: remote.amount ? parseFloat(String(remote.amount)) : order.amountUsd,
             currency: remote.currency || order.currency,
             transactionId: remote.transactionId,
           });
         }
-      } else if (remote && (remote.status === "UNPAID" || remote.status === "expired" || remote.status === "failed")) {
+      } else if (remote && (String(remote.status) === "UNPAID" || String(remote.status) === "expired" || String(remote.status) === "failed")) {
         // Payment failed or expired
-        const newStatus = remote.status === "expired" ? "CANCELLED" : "FAILED";
-        if (canTransition(order.status as any, newStatus as any)) {
+        const newStatus = String(remote.status) === "expired" ? "CANCELLED" : "FAILED";
+        if (canTransition(order.status as any, newStatus)) {
           order = await prisma.order.update({
             where: { id: order.id },
             data: {
@@ -101,10 +101,14 @@ export async function GET(
       // If remote is null or still UNPAID, keep polling
     } catch (error) {
       await logSecurityEvent("PAYMENT_CHECK_ERROR", {
-        orderNumber: order.orderNumber,
+        orderNumber: order?.orderNumber || "unknown",
         error: String(error),
       }, req);
     }
+  }
+
+  if (!order) {
+    return NextResponse.json({ error: "Order not found or payment not verified" }, { status: 404 });
   }
 
   return NextResponse.json({

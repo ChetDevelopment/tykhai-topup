@@ -10,6 +10,8 @@ import { processSuccessfulPayment } from "./payment";
 import { logSecurityEvent } from "./security";
 import { decryptField } from "./encryption";
 import { notifyTelegram } from "./telegram";
+import { checkGameDropBalance } from "./gamedrop";
+import { pauseSystem, resumeSystem, sendBalanceAlert } from "./system-control";
 
 // ===================== Configuration =====================
 const WORKER_CONFIG = {
@@ -17,9 +19,11 @@ const WORKER_CONFIG = {
   expireCheckIntervalMs: 15 * 60 * 1000, // Check expired orders every 15 min
   deliveryRetryIntervalMs: 10 * 60 * 1000, // Retry failed deliveries every 10 min
   fraudCheckIntervalMs: 30 * 60 * 1000, // Run fraud checks every 30 min
-  batchSize: 50, // Process 50 orders per batch
+  balanceCheckIntervalMs: 5 * 60 * 1000, // Check GameDrop balance every 5 min
+  reservationCleanupIntervalMs: 15 * 60 * 1000, // Cleanup expired reservations
+  batchSize: 50,
   maxDeliveryAttempts: 3,
-  deliveryRetryDelays: [5 * 60 * 1000, 15 * 60 * 1000, 30 * 60 * 1000], // 5min, 15min, 30min
+  deliveryRetryDelays: [5 * 60 * 1000, 15 * 60 * 1000, 30 * 60 * 1000],
 };
 
 // ===================== Worker State =====================
@@ -70,7 +74,25 @@ export async function startBackgroundWorker() {
     }
   }, WORKER_CONFIG.fraudCheckIntervalMs);
 
-  intervals = [paymentInterval, expireInterval, deliveryInterval, fraudInterval];
+  // Job 5: Balance check
+  const balanceInterval = setInterval(async () => {
+    try {
+      await runBalanceCheck();
+    } catch (err) {
+      console.error("[worker] Balance check error:", err);
+    }
+  }, WORKER_CONFIG.balanceCheckIntervalMs || 5 * 60 * 1000);
+
+  // Job 6: Reservation cleanup
+  const reservationInterval = setInterval(async () => {
+    try {
+      await expireReservations();
+    } catch (err) {
+      console.error("[worker] Reservation cleanup error:", err);
+    }
+  }, WORKER_CONFIG.reservationCleanupIntervalMs || 15 * 60 * 1000);
+
+  intervals = [paymentInterval, expireInterval, deliveryInterval, fraudInterval, balanceInterval, reservationInterval];
 
   console.log("[worker] All jobs scheduled successfully");
 }
@@ -87,9 +109,9 @@ async function checkPendingPayments() {
     where: {
       status: "PENDING",
       paymentRef: { not: null },
-      OR: [
-        { paymentRef: { not: { startsWith: "SIM-" } } },
-        { paymentRef: { not: { startsWith: "WALLET-" } },
+      NOT: [
+        { paymentRef: { startsWith: "SIM-" } },
+        { paymentRef: { startsWith: "WALLET-" } },
       ],
     },
     take: WORKER_CONFIG.batchSize,
@@ -120,7 +142,7 @@ async function checkPendingPayments() {
         const { valid } = validatePaymentAmount(
           order.amountUsd,
           order.currency,
-          result.amount ? parseFloat(result.amount) : 0,
+          result.amount ? parseFloat(String(result.amount)) : 0,
           order.currency === "KHR" ? undefined : 4100
         );
 
@@ -147,7 +169,7 @@ async function checkPendingPayments() {
 
         // Trigger delivery
         await scheduleDelivery(order.id);
-      } else if (result.status === "UNPAID" || result.status === "expired") {
+      } else if (String(result.status) === "UNPAID" || String(result.status) === "expired") {
         // Payment not completed
         await logPaymentEvent(order.id, "STILL_PENDING", {
           paymentRef,
@@ -190,6 +212,23 @@ async function expireOldPendingOrders() {
       console.error(`[worker] Error expiring order ${order.orderNumber}:`, err);
     }
   }
+}
+
+async function handleAmountMismatch(
+  order: { id: string; orderNumber: string },
+  result: { amount?: string | number; currency?: string; expected?: number }
+) {
+  await logPaymentEvent(order.id, "AMOUNT_MISMATCH", {
+    orderNumber: order.orderNumber,
+    expectedAmount: result.expected,
+    paidAmount: result.amount ? parseFloat(String(result.amount)) : undefined,
+    currency: result.currency,
+  });
+
+  await prisma.order.update({
+    where: { id: order.id },
+    data: { status: "FAILED", failureReason: "Payment amount mismatch" },
+  });
 }
 
 async function handleExpiredPayment(order: { id: string; orderNumber: string; paymentMethod: string }) {
@@ -528,11 +567,76 @@ async function logDeliveryEvent(
         orderId,
         attemptNumber,
         status,
-        metadata: JSON.stringify(details),
+        requestPayload: details ? JSON.stringify(details) : undefined,
       },
     });
   } catch (err) {
     console.error("[worker] Failed to log delivery event:", err);
+  }
+}
+
+// ===================== Job 5: Balance Check =====================
+async function runBalanceCheck() {
+  const settings = await prisma.settings.findUnique({ where: { id: 1 } });
+  if (!settings?.gameDropToken || settings.systemMode === "FORCE_CLOSE") return;
+
+  try {
+    const data = await checkGameDropBalance(settings.gameDropToken);
+    const available = data.balance - data.draftBalance;
+
+    // Update latest balance
+    await prisma.settings.update({
+      where: { id: 1 },
+      data: {
+        currentBalance: data.balance,
+        lastBalanceCheck: new Date(),
+        gameDropPartnerId: data.partnerId,
+      },
+    });
+
+    // Log to BalanceLog
+    await prisma.balanceLog.create({
+      data: {
+        balance: data.balance,
+        reserved: data.draftBalance,
+        available,
+        source: "API",
+      },
+    });
+
+    // AUTO mode actions only
+    if (settings.systemMode === "AUTO") {
+      if (settings.criticalThreshold && available < settings.criticalThreshold) {
+        await pauseSystem("LOW_BALANCE", available);
+      } else if (settings.warningThreshold && available < settings.warningThreshold) {
+        await sendBalanceAlert("WARNING", available, settings.warningThreshold);
+      } else if (settings.systemStatus === "PAUSED" && settings.pauseReason === "LOW_BALANCE") {
+        await resumeSystem("Balance restored above critical threshold");
+      }
+    }
+  } catch (err) {
+    console.error("[worker] GameDrop check failed:", err);
+    if (settings?.systemMode === "AUTO") {
+      await pauseSystem("API_ERROR");
+    }
+  }
+}
+
+// ===================== Job 6: Reservation Cleanup =====================
+async function expireReservations() {
+  const expired = await prisma.walletReservation.findMany({
+    where: { status: "ACTIVE", expiresAt: { lt: new Date() } },
+  });
+
+  for (const res of expired) {
+    await prisma.walletReservation.update({
+      where: { id: res.id },
+      data: { status: "EXPIRED" },
+    });
+    await prisma.settings.update({
+      where: { id: 1 },
+      data: { reservedBalance: { decrement: res.amount } },
+    });
   }
 }
 
@@ -545,6 +649,8 @@ export async function getWorkerStatus() {
       expireCheck: { intervalMs: WORKER_CONFIG.expireCheckIntervalMs },
       deliveryRetry: { intervalMs: WORKER_CONFIG.deliveryRetryIntervalMs },
       fraudCheck: { intervalMs: WORKER_CONFIG.fraudCheckIntervalMs },
+      balanceCheck: { intervalMs: WORKER_CONFIG.balanceCheckIntervalMs },
+      reservationCleanup: { intervalMs: WORKER_CONFIG.reservationCleanupIntervalMs },
     },
     config: WORKER_CONFIG,
   };
