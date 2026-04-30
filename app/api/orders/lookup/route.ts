@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { getCurrentUser } from "@/lib/auth";
 import { guardAdminApi } from "@/lib/api-security";
+import { ordersApiRateLimit } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -11,6 +12,10 @@ const lookupSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  // Apply rate limiting
+  const rateLimited = await ordersApiRateLimit(req);
+  if (rateLimited) return rateLimited;
+
   // REQUIRE authentication - either user (to see their own orders) or admin
   const user = await getCurrentUser();
 
