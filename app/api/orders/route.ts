@@ -49,15 +49,28 @@ export async function POST(req: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
     console.log("[api/orders] Parsed data:", { gameId: data.gameId, productId: data.productId, paymentMethod: data.paymentMethod });
 
-    // Validate email
+    // Validate email (skip DNS check in production for speed)
     if (data.customerEmail) {
       console.log("[api/orders] Validating email:", data.customerEmail);
-      const emailValid = await isRealEmail(data.customerEmail);
-      if (!emailValid) {
+      
+      // Basic format check only (DNS check too slow for production)
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(data.customerEmail)) {
         return NextResponse.json(
-          { error: "Please use a real email address" },
+          { error: "Invalid email format" },
           { status: 400 }
         );
+      }
+      
+      // Only do DNS check in development or if fast
+      if (process.env.NODE_ENV === "development") {
+        const emailValid = await isRealEmail(data.customerEmail).catch(() => true);
+        if (!emailValid) {
+          return NextResponse.json(
+            { error: "Please use a real email address" },
+            { status: 400 }
+          );
+        }
       }
     }
 
@@ -65,10 +78,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid UID format" }, { status: 400 });
     }
 
-    // Check maintenance mode
+    // Check maintenance mode (upsert to ensure settings always exists)
     console.log("[api/orders] Checking maintenance mode...");
-    const maintSettings = await prisma.settings.findUnique({ where: { id: 1 } });
-    console.log("[api/orders] Maintenance settings:", { maintenanceMode: maintSettings?.maintenanceMode, systemStatus: maintSettings?.systemStatus });
+    const maintSettings = await prisma.settings.upsert({
+      where: { id: 1 },
+      update: {},
+      create: {
+        id: 1,
+        siteName: "Ty Khai TopUp",
+        exchangeRate: 4100,
+        gameDropToken: process.env.GAME_DROP_TOKEN || undefined,
+      },
+    });
+    console.log("[api/orders] Maintenance settings:", { maintenanceMode: maintSettings.maintenanceMode, systemStatus: maintSettings.systemStatus });
     
     if (maintSettings?.maintenanceMode) {
       console.log("[api/orders] Maintenance mode ON");
