@@ -18,16 +18,28 @@ const orderRateLimit = rateLimit({
 });
 
 export async function POST(req: NextRequest) {
+  console.log("[api/orders] POST request received");
+  
   const ipBlocked = checkIPBlock(req);
-  if (ipBlocked) return ipBlocked;
+  if (ipBlocked) {
+    console.log("[api/orders] IP blocked");
+    return ipBlocked;
+  }
 
   const rateLimitResult = await orderRateLimit(req);
-  if (rateLimitResult) return rateLimitResult;
+  if (rateLimitResult) {
+    console.log("[api/orders] Rate limited");
+    return rateLimitResult;
+  }
 
   try {
+    console.log("[api/orders] Parsing request body...");
     const body = await req.json();
+    console.log("[api/orders] Request body:", JSON.stringify(body));
+    
     const parsed = CreateOrderSchema.safeParse(body);
     if (!parsed.success) {
+      console.error("[api/orders] Validation error:", parsed.error.flatten());
       return NextResponse.json(
         { error: "Invalid request", details: parsed.error.flatten() },
         { status: 400 }
@@ -35,9 +47,11 @@ export async function POST(req: NextRequest) {
     }
     const data = parsed.data;
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    console.log("[api/orders] Parsed data:", { gameId: data.gameId, productId: data.productId, paymentMethod: data.paymentMethod });
 
     // Validate email
     if (data.customerEmail) {
+      console.log("[api/orders] Validating email:", data.customerEmail);
       const emailValid = await isRealEmail(data.customerEmail);
       if (!emailValid) {
         return NextResponse.json(
@@ -52,8 +66,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Check maintenance mode
+    console.log("[api/orders] Checking maintenance mode...");
     const maintSettings = await prisma.settings.findUnique({ where: { id: 1 } });
+    console.log("[api/orders] Maintenance settings:", { maintenanceMode: maintSettings?.maintenanceMode, systemStatus: maintSettings?.systemStatus });
+    
     if (maintSettings?.maintenanceMode) {
+      console.log("[api/orders] Maintenance mode ON");
       return NextResponse.json(
         { error: maintSettings.maintenanceMessage || "Ordering is temporarily disabled for maintenance." },
         { status: 503 }
@@ -62,6 +80,7 @@ export async function POST(req: NextRequest) {
 
     // Check system status (balance-based pause)
     if (maintSettings?.systemStatus === "PAUSED") {
+      console.log("[api/orders] System PAUSED");
       const msg = maintSettings.pauseReason === "LOW_BALANCE"
         ? "Top-up service temporarily unavailable due to low balance. Please try again later."
         : maintSettings.maintenanceMessage || "Service temporarily unavailable. Please try again later.";
@@ -351,24 +370,41 @@ export async function POST(req: NextRequest) {
     }
 
     // Initiate payment gateway
+    console.log("[api/orders] Initiating payment...", { method: data.paymentMethod, orderNumber: order.orderNumber });
     const publicUrl = process.env.PUBLIC_APP_URL || baseUrl;
-    const init = await initiatePayment({
-      orderNumber: order.orderNumber,
-      amountUsd: order.amountUsd,
-      amountKhr: order.amountKhr,
-      currency: order.currency as PaymentCurrency,
-      method: data.paymentMethod,
-      returnUrl: `${publicUrl}/order?number=${order.orderNumber}`,
-      cancelUrl: `${publicUrl}/games/${game.slug}`,
-      callbackUrl: `${publicUrl}/api/payment/webhook/bakong`,
-      note: `Ty Khai TopUp · ${game.name} · ${product.name}`,
-      customerEmail: data.customerEmail,
-      metadata: {
-        game_slug: game.slug,
-        product_name: product.name,
-        player_uid: data.playerUid,
-      },
-    });
+    
+    let init;
+    try {
+      init = await initiatePayment({
+        orderNumber: order.orderNumber,
+        amountUsd: order.amountUsd,
+        amountKhr: order.amountKhr,
+        currency: order.currency as PaymentCurrency,
+        method: data.paymentMethod,
+        returnUrl: `${publicUrl}/order?number=${order.orderNumber}`,
+        cancelUrl: `${publicUrl}/games/${game.slug}`,
+        callbackUrl: `${publicUrl}/api/payment/webhook/bakong`,
+        note: `Ty Khai TopUp · ${game.name} · ${product.name}`,
+        customerEmail: data.customerEmail,
+        metadata: {
+          game_slug: game.slug,
+          product_name: product.name,
+          player_uid: data.playerUid,
+        },
+      });
+      console.log("[api/orders] Payment initiated:", { paymentRef: init.paymentRef, redirectUrl: init.redirectUrl });
+    } catch (paymentError) {
+      console.error("[api/orders] Payment initiation failed:", paymentError);
+      // Update order status to failed
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: "FAILED", failureReason: paymentError instanceof Error ? paymentError.message : "Payment initiation failed" },
+      });
+      return NextResponse.json(
+        { error: "Payment service unavailable. Please try again later." },
+        { status: 503 }
+      );
+    }
 
     await prisma.order.update({
       where: { id: order.id },
