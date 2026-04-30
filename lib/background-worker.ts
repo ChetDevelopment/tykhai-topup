@@ -505,7 +505,7 @@ async function deliverOrder(order: {
   const startTime = Date.now();
 
   try {
-    // Check if already delivered (idempotency)
+    // Check if already delivered (idempotent)
     const existingOrder = await prisma.order.findUnique({
       where: { id: order.id },
       select: { status: true, deliveredAt: true },
@@ -514,6 +514,80 @@ async function deliverOrder(order: {
     if (existingOrder?.status === "DELIVERED") {
       return { success: true, durationMs: 0 };
     }
+
+    // Get settings for GameDrop token
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } });
+    if (!settings?.gameDropToken) {
+      throw new Error("GameDrop token not configured");
+    }
+
+    // Get product's GameDrop offer ID (you need to store this in Product model)
+    const product = await prisma.product.findUnique({
+      where: { id: order.product.id },
+      select: { id: true, name: true },
+    });
+
+    // TODO: You need to add `gameDropOfferId` field to Product model
+    // For now, using a mapping (you should store this in DB)
+    const offerIdMap: Record<string, number> = {
+      // Map your product IDs to GameDrop offer IDs
+      // "product-uuid-here": 1001, // example
+    };
+
+    const offerId = offerIdMap[order.product.id];
+    if (!offerId) {
+      throw new Error(`No GameDrop offer ID mapped for product: ${order.product.name}`);
+    }
+
+    // Import GameDrop functions
+    const { createGameDropOrder, validatePlayerId } = await import("./gamedrop");
+
+    // Validate player ID with GameDrop first (optional but recommended)
+    console.log(`[delivery] Validating player ID: ${order.playerUid}`);
+    const validation = await validatePlayerId(
+      settings.gameDropToken,
+      offerId,
+      order.playerUid,
+      order.serverId || undefined
+    );
+
+    if (!validation.valid) {
+      throw new Error(`Player ID validation failed: ${validation.message}`);
+    }
+
+    console.log(`[delivery] Creating GameDrop order for ${order.orderNumber}`);
+    
+    // This is how GameDrop gets the player UID and delivers to their account
+    const result = await createGameDropOrder(
+      settings.gameDropToken,
+      offerId,
+      order.playerUid,  // ← GameDrop uses this as "gameUserId"
+      order.serverId || undefined,
+      order.orderNumber, // ← Idempotency key (prevents duplicate delivery)
+      undefined // customerEmail (optional)
+    );
+
+    if (result.status !== "COMPLETED" && result.status !== "PENDING") {
+      throw new Error(`GameDrop delivery failed: ${result.message}`);
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    console.log(`[delivery] Order ${order.orderNumber} delivered successfully`, {
+      status: result.status,
+      transactionId: result.transactionId,
+    });
+
+    return { success: true, durationMs };
+  } catch (err) {
+    // Log error but don't throw - let retry logic handle it
+    console.error(`[delivery] Order ${order.orderNumber} failed:`, err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Unknown delivery error",
+    };
+  }
+}
 
     // TODO: Replace with actual game top-up API
     // CRITICAL: This must be idempotent - safe to retry
