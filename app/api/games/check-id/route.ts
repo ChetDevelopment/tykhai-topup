@@ -6,7 +6,7 @@ import { z } from "zod";
 export const runtime = "nodejs";
 
 // In-game ID → nickname check.
-// Upstream: https://api.isan.eu.org (community-run; no auth, best-effort).
+// Upstream: https://v1.camrapidx.com/validate_user/
 //
 // Route is public (used by the checkout form) but intentionally narrow:
 // we only forward a fixed set of game slugs and strip out anything else.
@@ -25,14 +25,14 @@ function sanitizeServerId(value: unknown): string | undefined {
 }
 
 // Maps our game slugs → isan endpoint path + whether a server param is needed.
-const UPSTREAM: Record<
+const CAMRAPIDX_GAMES: Record<
   z.infer<typeof schema>["slug"],
-  { path: string; needsServer: boolean }
+  { file: string; needsZone: boolean }
 > = {
-  "mobile-legends":    { path: "/nickname/ml",      needsServer: true  },
-  "genshin-impact":    { path: "/nickname/genshin", needsServer: true  },
-  "honkai-star-rail":  { path: "/nickname/starrail", needsServer: true },
-  "free-fire":         { path: "/nickname/ff",      needsServer: false },
+  "mobile-legends":    { file: "Mobile_Legends_KH", needsZone: true },
+  "genshin-impact":    { file: "Genshin_Impact",    needsZone: false },
+  "honkai-star-rail":  { file: "Honkai_Star_Rail",  needsZone: false },
+  "free-fire":         { file: "FreeFire_Global",    needsZone: false },
 };
 
 export async function POST(req: NextRequest) {
@@ -81,103 +81,55 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Free Fire uses a different upstream API (camrapidx)
-  if (slug === "free-fire") {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch(
-        `https://v1.camrapidx.com/validate_user/FreeFire_LevelUpPass.php?UserID=${encodeURIComponent(uid)}`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            "User-Agent": "Ty Khai TopUp/1.0",
-          },
-          cache: "no-store",
-          signal: controller.signal,
-        },
-      );
-      clearTimeout(timeout);
+  const cfg = CAMRAPIDX_GAMES[slug];
 
-      if (!res.ok) {
-        return NextResponse.json(
-          { success: false, error: "Lookup failed" },
-          { status: 502 }
-        );
-      }
-
-      const data: unknown = await res.json().catch(() => null);
-      if (!data || typeof data !== "object") {
-        return NextResponse.json(
-          { success: false, error: "Invalid response" },
-          { status: 502 }
-        );
-      }
-
-      const d = data as { status?: string; username?: string };
-      if (d.status !== "APPROVED" || !d.username) {
-        return NextResponse.json(
-          { success: false, error: "Player not found — check your ID." },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        name: d.username,
-        uid,
-        serverId: null,
-      });
-    } catch (err) {
-      const aborted = err instanceof Error && err.name === "AbortError";
-      return NextResponse.json(
-        { success: false, error: aborted ? "Lookup timed out" : "Network error" },
-        { status: 504 }
-      );
-    }
-  }
-
-  const cfg = UPSTREAM[slug];
-
-  if (cfg.needsServer && !serverId) {
+  if (cfg.needsZone && !serverId) {
     return NextResponse.json(
       { success: false, error: "Server/Zone ID is required for this game" },
       { status: 400 }
     );
   }
 
-  // api.isan.eu.org uses path-style params, not query string:
-  //   /nickname/ml/{userId}/{zoneId}
-  //   /nickname/genshin/{uid}/{server}
-  const segments = [encodeURIComponent(uid)];
-  if (serverId) segments.push(encodeURIComponent(serverId));
-  const upstreamUrl = `https://api.isan.eu.org${cfg.path}/${segments.join("/")}`;
+  // Build camrapidx URL
+  let upstreamUrl = `https://v1.camrapidx.com/validate_user/${cfg.file}.php?UserID=${encodeURIComponent(uid)}`;
+  if (cfg.needsZone && serverId) {
+    upstreamUrl += `&ZoneID=${encodeURIComponent(serverId)}`;
+  }
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(upstreamUrl, {
-      headers: { Accept: "application/json" },
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Ty Khai TopUp/1.0",
+      },
       cache: "no-store",
       signal: controller.signal,
     });
     clearTimeout(timeout);
 
-    const data: unknown = await res.json().catch(() => null);
-    if (!data || typeof data !== "object") {
+    if (!res.ok) {
       return NextResponse.json(
-        { success: false, error: "Upstream lookup failed" },
+        { success: false, error: "Lookup failed" },
         { status: 502 }
       );
     }
 
-    // isan.eu.org shape: { success: bool, name?: string, message?: string }
-    const d = data as { success?: boolean; name?: string; message?: string };
-    if (!d.success || !d.name) {
-      // Upstream validates the id/server combo — treat any non-success as "not found".
-      const msg = d.message && d.message.toLowerCase() !== "bad request"
-        ? d.message
+    const data: unknown = await res.json().catch(() => null);
+    if (!data || typeof data !== "object") {
+      return NextResponse.json(
+        { success: false, error: "Invalid response" },
+        { status: 502 }
+      );
+    }
+
+    const d = data as { status?: string; username?: string; user_id?: string; message?: string };
+    
+    if (d.status !== "APPROVED" || !d.username) {
+      const msg = d.message && d.message !== "Successfully Verified" 
+        ? d.message 
         : "Player not found — check your ID and zone.";
       return NextResponse.json(
         { success: false, error: msg },
@@ -187,8 +139,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      name: d.name,
-      uid,
+      name: d.username,
+      uid: d.user_id || uid,
       serverId: serverId ?? null,
     });
   } catch (err) {

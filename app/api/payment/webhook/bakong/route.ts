@@ -84,26 +84,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid payment reference" }, { status: 400 });
     }
 
-  try {
-    const body = await req.json();
-    const rawBodyString = JSON.stringify(body);
-
-    // Verify webhook signature if provided
-    const signature = req.headers.get("x-bakong-signature") || req.headers.get("x-signature");
-    if (signature && process.env.BAKONG_WEBHOOK_SECRET) {
-      const isValid = verifyWebhookSignature(rawBodyString, signature, process.env.BAKONG_WEBHOOK_SECRET);
-      if (!isValid) {
-        await logSecurityEvent("INVALID_WEBHOOK_SIGNATURE", { signature }, req);
-        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-      }
-    }
-
-    // Get payment reference
-    const paymentRef = sanitizeInput(body.md5 || body.md5hash || body.transaction_id || "");
-    if (!paymentRef || paymentRef.length < 10) {
-      return NextResponse.json({ error: "Invalid payment reference" }, { status: 400 });
-    }
-
     // REPLAY PROTECTION (Database-based for serverless safety)
     const payloadHash = hashSha256(rawBodyString);
     if (!payloadHash) {
@@ -115,6 +95,9 @@ export async function POST(req: NextRequest) {
       await logSecurityEvent("WEB_HOOK_REPLAY_ATTEMPT", { paymentRef }, req);
       return NextResponse.json({ ok: true, skipped: true, reason: "already_processed" });
     }
+
+    // Convert to SHA256 for internal lookup
+    const secureRef = hashSha256(paymentRef).slice(0, 64);
 
     // Database check for persistent replay protection
     const existingLog = await prisma.paymentLog.findFirst({
@@ -137,9 +120,6 @@ export async function POST(req: NextRequest) {
       await logSecurityEvent("WEBHOOK_REPLAY_ATTEMPT", { paymentRef }, req);
       return NextResponse.json({ ok: true, skipped: true, reason: "already_processed" });
     }
-
-    // Convert to SHA256 for internal lookup
-    const secureRef = hashSha256(paymentRef).slice(0, 64);
 
     const order = await prisma.order.findFirst({
       where: {
