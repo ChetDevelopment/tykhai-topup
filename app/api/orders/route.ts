@@ -9,47 +9,33 @@ import { z } from "zod";
 import { isRealEmail } from "@/lib/email-validator";
 import { checkIPBlock, rateLimit } from "@/lib/rate-limit";
 import { encryptField, hashSha256 } from "@/lib/encryption";
+import { CreateOrderSchema } from "@/lib/payment-types";
 
 const orderRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  maxRequests: 10, // 10 orders per minute per IP
-});
-
-const createOrderSchema = z.object({
-  gameId: z.string().min(1),
-  productId: z.string().min(1),
-  playerUid: z.string().min(4).max(20),
-  serverId: z.string().optional(),
-  customerEmail: z.string().email().optional(),
-  customerPhone: z.string().optional(),
-  paymentMethod: z.enum(["WALLET", "BAKONG"]),
-  currency: z.enum(["USD", "KHR"]).optional().default("USD"),
-  promoCode: z.string().optional(),
-  playerNickname: z.string().max(100).optional(),
-  usePoints: z.number().min(0).optional().default(0),
-  idempotencyKey: z.string().min(8).max(128).optional(),
+  windowMs: 60 * 1000,
+  maxRequests: 10,
 });
 
 export async function POST(req: NextRequest) {
   const ipBlocked = checkIPBlock(req);
   if (ipBlocked) return ipBlocked;
 
-  // Apply rate limiting
   const rateLimitResult = await orderRateLimit(req);
   if (rateLimitResult) return rateLimitResult;
 
-    try {
-      const body = await req.json();
-      const parsed = createOrderSchema.safeParse(body);
-      if (!parsed.success) {
-        return NextResponse.json(
-          { error: "Invalid request", details: parsed.error.flatten() },
-          { status: 400 }
-        );
-      }
-      const data = parsed.data;
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+  try {
+    const body = await req.json();
+    const parsed = CreateOrderSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid request", details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+    const data = parsed.data;
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
+    // Validate email
     if (data.customerEmail) {
       const emailValid = await isRealEmail(data.customerEmail);
       if (!emailValid) {
@@ -64,7 +50,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid UID format" }, { status: 400 });
     }
 
-    // Maintenance mode blocks new orders site-wide.
+    // Check maintenance mode
     const maintSettings = await prisma.settings.findUnique({ where: { id: 1 } });
     if (maintSettings?.maintenanceMode) {
       return NextResponse.json(
@@ -73,14 +59,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Banlist: block orders from flagged emails, phones, IPs or UIDs.
+    // Check banlist
     const ipAddress = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
     const userAgent = req.headers.get("user-agent") ?? "unknown";
     const banCandidates = [
-      { type: "email", value: data.customerEmail?.toLowerCase() },
-      { type: "phone", value: data.customerPhone?.toLowerCase() },
-      { type: "ip", value: ipAddress.toLowerCase() },
-      { type: "uid", value: data.playerUid.toLowerCase() },
+      { type: "email" as const, value: data.customerEmail?.toLowerCase() },
+      { type: "phone" as const, value: data.customerPhone?.toLowerCase() },
+      { type: "ip" as const, value: ipAddress.toLowerCase() },
+      { type: "uid" as const, value: data.playerUid.toLowerCase() },
     ].filter((c): c is { type: string; value: string } => !!c.value);
 
     if (banCandidates.length > 0) {
@@ -98,18 +84,18 @@ export async function POST(req: NextRequest) {
     // Idempotency check
     if (data.idempotencyKey) {
       const existingOrder = await prisma.order.findFirst({
-        where: { paymentRef: data.idempotencyKey }
+        where: { paymentRef: data.idempotencyKey },
       });
       if (existingOrder) {
         return NextResponse.json({
           orderNumber: existingOrder.orderNumber,
           duplicate: true,
-          redirectUrl: `${baseUrl}/order?number=${existingOrder.orderNumber}`
+          redirectUrl: `${baseUrl}/order?number=${existingOrder.orderNumber}`,
         });
       }
     }
 
-    // Validate game + product match and pricing
+    // Validate game + product
     const [game, product, settings] = await Promise.all([
       prisma.game.findUnique({ where: { id: data.gameId } }),
       prisma.product.findUnique({ where: { id: data.productId } }),
@@ -128,7 +114,7 @@ export async function POST(req: NextRequest) {
 
     const exchangeRate = settings?.exchangeRate ?? 4100;
 
-    // Create the order
+    // Create order number
     const orderNumber = generateOrderNumber();
     const user = await getCurrentUser();
     const idempotencyKey = req.headers.get("x-idempotency-key") || data.idempotencyKey;
@@ -149,13 +135,11 @@ export async function POST(req: NextRequest) {
           OR: [{ paymentRefEnc: idempotencyHash }, { paymentRef: idempotencyHash }],
         },
       });
-
       if (existing) {
         const redirectUrl =
           existing.status === "PENDING"
             ? `${baseUrl}/checkout/${existing.orderNumber}`
             : `${baseUrl}/order?number=${existing.orderNumber}`;
-
         return NextResponse.json({
           orderNumber: existing.orderNumber,
           duplicate: true,
@@ -189,7 +173,6 @@ export async function POST(req: NextRequest) {
         finalPrice = Math.round((product.priceUsd - discountUsd) * 100) / 100;
         promoCodeId = promo.id;
 
-        // Increment usage count
         await prisma.promoCode.update({
           where: { id: promo.id },
           data: { usedCount: { increment: 1 } },
@@ -203,8 +186,8 @@ export async function POST(req: NextRequest) {
         where: {
           userId: user.userId,
           productId: product.id,
-          status: { in: ["PAID", "DELIVERED", "PROCESSING"] }
-        }
+          status: { in: ["PAID", "DELIVERED", "PROCESSING"] },
+        },
       });
 
       if (!hasBoughtBefore) {
@@ -226,7 +209,7 @@ export async function POST(req: NextRequest) {
       discountUsd = Math.round((discountUsd + pointsDiscount) * 100) / 100;
     }
 
-    // Wallet payment: deduct from balance and mark paid directly
+    // Wallet payment: deduct from balance
     let walletDeducted = false;
     if (data.paymentMethod === "WALLET" && user && finalPrice > 0) {
       const walletBalance = user.walletBalance || 0;
@@ -234,12 +217,12 @@ export async function POST(req: NextRequest) {
         walletDeducted = true;
         await prisma.user.update({
           where: { id: user.userId },
-          data: { walletBalance: { decrement: finalPrice } }
+          data: { walletBalance: { decrement: finalPrice } },
         });
       }
     }
 
-    // Encrypt sensitive data before storing
+    // Encrypt sensitive data
     const encryptedEmail = encryptField(data.customerEmail);
     const encryptedPhone = encryptField(data.customerPhone);
     const encryptedIp = encryptField(ipAddress);
@@ -252,14 +235,14 @@ export async function POST(req: NextRequest) {
         playerUid: data.playerUid,
         serverId: data.serverId,
         playerNickname: data.playerNickname,
-        customerEmail: encryptedEmail, // Encrypted
-        customerPhone: encryptedPhone, // Encrypted
+        customerEmail: encryptedEmail,
+        customerPhone: encryptedPhone,
         amountUsd: finalPrice,
         amountKhr: calcKhr(finalPrice, exchangeRate),
         currency: data.currency,
         paymentMethod: data.paymentMethod,
         status: walletDeducted ? "PAID" : "PENDING",
-        ipAddress: encryptedIp, // Encrypted for privacy
+        ipAddress: encryptedIp,
         userAgent,
         paymentRefEnc: idempotencyHash,
         promoCodeId,
@@ -283,7 +266,7 @@ export async function POST(req: NextRequest) {
       if (pointsUsed > 0 && user) {
         await prisma.user.update({
           where: { id: user.userId },
-          data: { pointsBalance: { decrement: pointsUsed } }
+          data: { pointsBalance: { decrement: pointsUsed } },
         });
       }
 
@@ -307,7 +290,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Payment gateway
+    // Initiate payment gateway
     const publicUrl = process.env.PUBLIC_APP_URL || baseUrl;
     const init = await initiatePayment({
       orderNumber: order.orderNumber,
@@ -347,4 +330,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
-

@@ -35,8 +35,8 @@ export async function POST(
   // Verify payment and amount
   if (remote && remote.paid && order.status === "PENDING") {
     // AMOUNT VERIFICATION
-    if (remote.amount) {
-      const paidAmount = parseFloat(remote.amount);
+    if (remote.amount !== undefined && remote.amount !== null) {
+      const paidAmount = parseFloat(String(remote.amount));
 
       // Get dynamic exchange rate from Settings
       const settings = await prisma.settings.findFirst();
@@ -54,19 +54,24 @@ export async function POST(
           targetType: "order",
           targetId: order.id,
           details: {
-            paymentRef: order.paymentRef,
             expectedAmount,
             paidAmount,
             currency: order.currency,
           },
         });
 
-        return NextResponse.json({
-          error: "Amount mismatch",
-          expectedAmount,
-          paidAmount,
-          remote,
-        }, { status: 400 });
+        await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: "FAILED",
+            failureReason: `Amount mismatch: expected ${expectedAmount.toFixed(2)}, paid ${paidAmount.toFixed(2)}`,
+          },
+        });
+
+        return NextResponse.json(
+          { error: "Payment amount mismatch", status: "FAILED" },
+          { status: 400 }
+        );
       }
     }
 
@@ -98,12 +103,12 @@ export async function POST(
     });
   } else if (
     remote &&
-    (remote.status === "expired" || remote.status === "failed" || remote.status === "UNPAID") &&
+    (String(remote.status) === "expired" || String(remote.status) === "failed" || String(remote.status) === "UNPAID") &&
     order.status === "PENDING"
   ) {
     updated = await prisma.order.update({
       where: { id: order.id },
-      data: { status: "FAILED", failureReason: `Bakong: ${remote.status}` },
+      data: { status: "FAILED", failureReason: `Bakong: ${String(remote.status)}` },
     });
     await writeAudit({
       action: "order.bakong_refresh.auto_failed",

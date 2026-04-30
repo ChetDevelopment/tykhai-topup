@@ -71,51 +71,186 @@ model Product {
 }
 
 model Order {
-  id             String       @id @default(cuid())
-  orderNumber    String       @unique // human-friendly: TY-XXXXXX
-  gameId         String
-  game           Game         @relation(fields: [gameId], references: [id])
-  productId      String
-  product        Product      @relation(fields: [productId], references: [id])
-  playerUid      String
-  serverId       String?
-  playerNickname String?      // optional nickname pulled after validation
-  customerEmail  String?      // Encrypted with encryptField()
-  customerPhone  String?      // Encrypted with encryptField()
-  amountUsd      Float
-  amountKhr      Float?
-  currency       String       @default("USD")
-  paymentMethod  String       // BAKONG | WALLET
-  paymentRef     String?      // SHA256 hash (encrypted in transit)
-  paymentRefEnc  String?      // Encrypted payment reference for extra security
-  paymentUrl     String?      // Encrypted (contains sensitive gateway data)
-  qrString       String?      // Encrypted (KHQR contains sensitive data)
-  paymentExpiresAt DateTime?  // QR/payment expiry time
-  status         String       @default("PENDING") // PENDING | PAID | PROCESSING | DELIVERED | FAILED | REFUNDED | CANCELLED
-  deliveryNote   String?      // admin notes about delivery
-  failureReason  String?
-  ipAddress      String?      // Encrypted for privacy
-  userAgent      String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  paidAt         DateTime?
-  deliveredAt    DateTime?
-  promoCodeId    String?
-  promoCode      PromoCode? @relation(fields: [promoCodeId], references: [id])
-  discountUsd    Float      @default(0)
-  pointsEarned   Int        @default(0)
-  pointsUsed     Int        @default(0)
-  isSubscription Boolean    @default(false)
-  squadPoolId    String?
-  squadPool      SquadPool? @relation(fields: [squadPoolId], references: [id])
-  userId         String?
-  user           User?      @relation(fields: [userId], references: [id])
-  review         Review?
-  tickets        Ticket[]
+  id                 String       @id @default(cuid())
+  orderNumber        String       @unique // human-friendly: TY-XXXXXX
+  gameId             String
+  game               Game         @relation(fields: [gameId], references: [id])
+  productId          String
+  product            Product      @relation(fields: [productId], references: [id])
+  playerUid          String
+  serverId           String?
+  playerNickname     String?      // optional nickname pulled after validation
+  customerEmail      String?      // Encrypted with encryptField()
+  customerPhone      String?      // Encrypted with encryptField()
+  amountUsd          Float
+  amountKhr          Float?
+  currency           String       @default("USD")
+  paymentMethod      String       // BAKONG | WALLET | TRUEMONEY | WING | BANK | USDT
+  paymentRef         String?      // SHA256 hash (encrypted in transit)
+  paymentRefEnc      String?      // Encrypted payment reference for extra security
+  paymentUrl         String?      // Encrypted (contains sensitive gateway data)
+  qrString           String?      // Encrypted (KHQR contains sensitive data)
+  paymentExpiresAt   DateTime?    // QR/payment expiry time
+  status             String       @default("PENDING") // PENDING | PAID | PROCESSING | DELIVERED | FAILED | REFUNDED | CANCELLED | REFUND_REQUIRED
+  deliveryNote       String?      // admin notes about delivery
+  failureReason      String?
+  ipAddress          String?      // Encrypted for privacy
+  userAgent          String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  paidAt             DateTime?
+  deliveredAt        DateTime?
+  promoCodeId        String?
+  promoCode          PromoCode?  @relation(fields: [promoCodeId], references: [id])
+  discountUsd        Float        @default(0)
+  pointsEarned       Int          @default(0)
+  pointsUsed         Int          @default(0)
+  isSubscription     Boolean      @default(false)
+  squadPoolId        String?
+  squadPool          SquadPool?   @relation(fields: [squadPoolId], references: [id])
+  
+  // New fields for production-grade system
+  deliveryAttempts  Int          @default(0)
+  maxDeliveryAttempts Int          @default(3)
+  lastDeliveryAt    DateTime?
+  nextDeliveryAt    DateTime?    // For retry scheduling
+  walletReserved    Float        @default(0) // Amount reserved from wallet (not yet deducted)
+  refundStatus      String?      // PENDING | PROCESSING | COMPLETED | FAILED
+  refundReason      String?
+  refundAmount      Float?
+  refundAt          DateTime?
+  fraudScore        Float        @default(0) // 0-100 risk score
+  fraudFlags        String       @default("[]") // JSON array of fraud flags
+  idempotencyKey    String?      @unique // For idempotent operations
+  
+  userId             String?
+  user               User?        @relation(fields: [userId], references: [id])
+  review             Review?
+  tickets            Ticket[]
+  paymentLogs        PaymentLog[]    // New: structured payment logs
+  deliveryLogs      DeliveryLog[]  // New: structured delivery logs
+  auditLogs         AuditLog[]     // New: structured audit logs
+  refunds            Refund[]       // New: refund records
 
   @@index([status])
   @@index([createdAt])
   @@index([customerEmail])
+}
+
+// ===================== New Models for Production System =====================
+
+model PaymentLog {
+  id                String   @id @default(cuid())
+  orderId           String
+  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  event             String   // INITIATED | VERIFIED | AMOUNT_MISMATCH | FAILED | RETRY
+  status            String
+  paymentRef        String?
+  amount            Float?
+  currency          String?
+  provider          String?  // BAKONG | WALLET | etc.
+  responseCode      String?
+  responseMessage   String?
+  rawResponse       String?  // Encrypted
+  metadata         String   @default("{}") // JSON
+  createdAt         DateTime @default(now())
+
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model DeliveryLog {
+  id                String   @id @default(cuid())
+  orderId           String
+  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  attemptNumber     Int      @default(1)
+  status            String   // PENDING | SUCCESS | FAILED | RETRY
+  deliveryMethod    String?  // API | MANUAL | BATCH
+  requestPayload    String?  // Encrypted
+  responsePayload   String?  // Encrypted
+  errorMessage      String?
+  durationMs        Int?     // How long delivery took
+  nextRetryAt       DateTime?
+  createdAt         DateTime @default(now())
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  adminEmail  String?
+  action      String   // order.mark_paid | payment.verified | delivery.success
+  targetType  String?  // order | payment | delivery
+  targetId    String?
+  details     String?  // JSON
+  ipAddress   String?  // Encrypted
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+}
+
+model Refund {
+  id              String   @id @default(cuid())
+  orderId         String
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id])
+  amount          Float
+  currency        String   @default("USD")
+  reason          String?
+  status          String   @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  refundMethod    String?  // WALLET | BANK | ORIGINAL_PAYMENT
+  transactionId   String?  // External refund transaction ID
+  processorFee    Float?
+  netAmount       Float?
+  requestedAt     DateTime @default(now())
+  processedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([orderId])
+}
+
+model WalletReservation {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orderId         String?
+  order           Order?    @relation(fields: [orderId], references: [id])
+  amount          Float
+  currency        String   @default("USD")
+  status          String   @default("ACTIVE") // ACTIVE | CONSUMED | EXPIRED | CANCELLED
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+}
+
+model FraudFlag {
+  id              String   @id @default(cuid())
+  orderId         String?
+  order           Order?    @relation(fields: [orderId], references: [id])
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+  type            String   // HIGH_FREQUENCY | SAME_UID_MULTI_ACCOUNT | ABNORMAL_AMOUNT | SUSPICIOUS_PATTERN
+  severity        String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  description     String?
+  metadata        String?  // JSON
+  isResolved      Boolean  @default(false)
+  resolvedById    String?
+  resolvedBy      User?    @relation("FraudResolver", fields: [resolvedById], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([type])
+  @@index([severity])
+  @@index([isResolved])
 }
 
 model PromoCode {
