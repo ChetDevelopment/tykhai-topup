@@ -157,7 +157,17 @@ export async function POST(req: NextRequest) {
     const [game, product, settings] = await Promise.all([
       prisma.game.findUnique({ where: { id: data.gameId } }),
       prisma.product.findUnique({ where: { id: data.productId } }),
-      prisma.settings.findUnique({ where: { id: 1 } }),
+      // Use upsert to ensure settings always exists
+      prisma.settings.upsert({
+        where: { id: 1 },
+        update: {},
+        create: {
+          id: 1,
+          siteName: "Ty Khai TopUp",
+          exchangeRate: 4100,
+          gameDropToken: process.env.GAME_DROP_TOKEN || undefined,
+        },
+      }),
     ]);
 
     if (!game || !game.active) {
