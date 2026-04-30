@@ -120,6 +120,21 @@ export default function CheckoutPage() {
       .catch(() => setAuthReady(true));
   }, [router]);
 
+  const verifyPayment = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderNumber)}`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Verification failed");
+      const data = await res.json();
+      return data;
+    } catch (err: any) {
+      console.error("Payment verification error:", err);
+      return null;
+    }
+  }, [orderNumber]);
+
   const fetchOrder = useCallback(async () => {
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(orderNumber)}`, { cache: "no-store" });
