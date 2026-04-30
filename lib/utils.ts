@@ -20,9 +20,14 @@ export function calcKhr(usd: number, rate: number = 4100): number {
   return Math.round(usd * rate / 100) * 100; // round to nearest 100 KHR
 }
 
-// Validate UID format - basic: digits only, 6-20 chars
+// Validate UID format - strict: alphanumeric + dash/underscore only, 4-20 chars
+// Prevents injection attacks (No < > " ' ; etc.)
 export function isValidUid(uid: string): boolean {
-  return /^\d{6,20}$/.test(uid.trim());
+  if (typeof uid !== "string") return false;
+  const trimmed = uid.trim();
+  // Only allow safe characters: alphanumeric, hyphens, underscores
+  // Length: 4-20 characters
+  return /^[a-zA-Z0-9-_]{4,20}$/.test(trimmed);
 }
 
 // Validate server zone id
