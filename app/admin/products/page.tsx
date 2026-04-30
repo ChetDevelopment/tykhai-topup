@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Plus, Gem, Pencil, Trash2 } from "lucide-react";
+import { useCsrfToken } from "@/lib/useCsrfToken";
 
 export default function AdminProductsPage() {
   const searchParams = useSearchParams();
   const gameIdFilter = searchParams?.get("gameId") || "";
+  const { token: csrfToken } = useCsrfToken();
 
   const [games, setGames] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -34,7 +36,7 @@ export default function AdminProductsPage() {
   async function toggleActive(p: any) {
     await fetch(`/api/admin/products/${p.id}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken || "" },
       body: JSON.stringify({ active: !p.active }),
     });
     await loadAll();
@@ -42,7 +44,10 @@ export default function AdminProductsPage() {
 
   async function deleteProduct(p: any) {
     if (!confirm(`Delete "${p.name}"?`)) return;
-    await fetch(`/api/admin/products/${p.id}`, { method: "DELETE" });
+    await fetch(`/api/admin/products/${p.id}`, {
+      method: "DELETE",
+      headers: { "x-csrf-token": csrfToken || "" },
+    });
     await loadAll();
   }
 
@@ -156,6 +161,7 @@ export default function AdminProductsPage() {
 }
 
 function ProductForm({ games, defaultGameId, initial, onCancel, onSaved }: any) {
+  const { token: csrfToken } = useCsrfToken();
   const [form, setForm] = useState({
     gameId: initial?.gameId || defaultGameId || games[0]?.id || "",
     name: initial?.name || "",
@@ -191,7 +197,7 @@ function ProductForm({ games, defaultGameId, initial, onCancel, onSaved }: any) 
     const method = initial ? "PATCH" : "POST";
     const res = await fetch(url, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken || "" },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {

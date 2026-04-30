@@ -15,10 +15,18 @@ export default function AdminLoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
+    // Get CSRF token first
+    const csrfRes = await fetch("/api/csrf");
+    const csrfData = await csrfRes.json();
+
     try {
       const res = await fetch("/api/admin/auth", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrfData.csrfToken || "",
+        },
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();

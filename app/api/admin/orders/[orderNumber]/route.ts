@@ -7,6 +7,7 @@ import { updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { logSecurityEvent } from "@/lib/logger";
+import { decryptField } from "@/lib/encryption";
 
 const updateSchema = z.object({
   status: z.enum([
@@ -37,7 +38,15 @@ export async function GET(
     },
   });
   if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(order);
+
+  // Decrypt customer data for admin display
+  const decryptedOrder = {
+    ...order,
+    customerEmail: order.customerEmail ? (decryptField(order.customerEmail) || order.customerEmail) : null,
+    customerPhone: order.customerPhone ? (decryptField(order.customerPhone) || order.customerPhone) : null,
+  };
+
+  return NextResponse.json(decryptedOrder);
 }
 
 export async function PATCH(

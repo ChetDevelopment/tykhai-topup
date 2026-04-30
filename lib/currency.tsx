@@ -85,7 +85,16 @@ export function CurrencyProvider({
 export function useCurrency(): CurrencyContextValue {
   const ctx = useContext(CurrencyContext);
   if (!ctx) {
-    throw new Error("useCurrency must be used within a CurrencyProvider");
+    // Return a default context value for SSR
+    // This prevents errors during server-side rendering
+    return {
+      currency: "USD",
+      exchangeRate: 4100,
+      setCurrency: () => {},
+      toggle: () => {},
+      format: (usd: number) => `$${usd.toFixed(2)}`,
+      toKhr: (usd: number) => Math.round((usd * 4100) / 100) * 100,
+    };
   }
   return ctx;
 }

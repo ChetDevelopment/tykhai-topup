@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { Gift, Calendar, Check, Loader2 } from "lucide-react";
+import { useCsrfToken } from "@/lib/useCsrfToken";
 
 export default function DailyCheckin({ onCheckinSuccess }: { onCheckinSuccess?: () => void }) {
   const [checkedIn, setCheckedIn] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const { token: csrfToken } = useCsrfToken();
 
   useEffect(() => {
     fetch("/api/user/daily-checkin")
@@ -19,7 +21,10 @@ export default function DailyCheckin({ onCheckinSuccess }: { onCheckinSuccess?: 
     if (checkedIn || submitting) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/user/daily-checkin", { method: "POST" });
+      const res = await fetch("/api/user/daily-checkin", {
+        method: "POST",
+        headers: { "x-csrf-token": csrfToken || "" },
+      });
       if (res.ok) {
         setCheckedIn(true);
         if (onCheckinSuccess) onCheckinSuccess();

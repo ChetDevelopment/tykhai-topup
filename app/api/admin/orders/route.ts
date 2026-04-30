@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { guardAdminApi } from "@/lib/api-security";
 import { NextRequest, NextResponse } from "next/server";
+import { decryptField } from "@/lib/encryption";
 
 export async function GET(req: NextRequest) {
   const security = await guardAdminApi(req);
@@ -38,8 +39,15 @@ export async function GET(req: NextRequest) {
     prisma.order.count({ where }),
   ]);
 
+  // Decrypt customer emails for admin display
+  const decryptedOrders = orders.map(order => ({
+    ...order,
+    customerEmail: order.customerEmail ? (decryptField(order.customerEmail) || order.customerEmail) : null,
+    customerPhone: order.customerPhone ? (decryptField(order.customerPhone) || order.customerPhone) : null,
+  }));
+
   return NextResponse.json({
-    orders,
+    orders: decryptedOrders,
     total,
     page,
     perPage,

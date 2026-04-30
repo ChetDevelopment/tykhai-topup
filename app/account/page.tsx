@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import { 
-  User, 
-  History, 
-  ShieldCheck, 
-  LogOut, 
-  Plus, 
-  Trash2, 
-  Zap, 
+import {
+  User,
+  History,
+  ShieldCheck,
+  LogOut,
+  Plus,
+  Trash2,
+  Zap,
   Crown,
   ExternalLink,
   Loader2,
@@ -23,9 +23,11 @@ import { signOut } from "next-auth/react";
 import { RANKS, getRank, calculateProgress } from "@/lib/vip";
 import DailyCheckin from "@/components/DailyCheckin";
 import ReferralCard from "@/components/ReferralCard";
+import { useCsrfToken } from "@/lib/useCsrfToken";
 
 export default function UserDashboard() {
   const router = useRouter();
+  const { token: csrfToken } = useCsrfToken();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [reordering, setReordering] = useState<string | null>(null);
@@ -45,7 +47,9 @@ export default function UserDashboard() {
   useEffect(() => { load(); }, []);
 
   async function handleLogout() {
-    await fetch("/api/user/auth/logout", { method: "POST" });
+    // Clear manual JWT cookie
+    document.cookie = "tykhai_user=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    // Sign out from NextAuth (Google login)
     await signOut({ redirect: false });
     router.push("/");
     router.refresh();
@@ -53,7 +57,10 @@ export default function UserDashboard() {
 
   async function deleteUid(id: string) {
     if (!confirm("Remove this saved ID?")) return;
-    await fetch(`/api/user/saved-uids/${id}`, { method: "DELETE" });
+    await fetch(`/api/user/saved-uids/${id}`, {
+      method: "DELETE",
+      headers: { "x-csrf-token": csrfToken || "" },
+    });
     load();
   }
 
@@ -63,7 +70,7 @@ export default function UserDashboard() {
     try {
       const res = await fetch("/api/user/reorder", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken || "" },
         body: JSON.stringify({
           orderId: order.id,
           playerUid: order.playerUid,

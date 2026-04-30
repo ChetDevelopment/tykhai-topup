@@ -2,12 +2,17 @@
 
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
+import { useCsrfToken } from "@/lib/useCsrfToken";
 
 export default function LogoutButton() {
   const router = useRouter();
+  const { token: csrfToken } = useCsrfToken();
 
   async function handleLogout() {
-    await fetch("/api/admin/auth", { method: "DELETE" });
+    await fetch("/api/admin/auth", {
+      method: "DELETE",
+      headers: { "x-csrf-token": csrfToken || "" },
+    });
     router.push("/admin/login");
     router.refresh();
   }
