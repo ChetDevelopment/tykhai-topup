@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   const referralCode = user.id.slice(-6).toUpperCase();
-  const referralLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/register?ref=${referralCode}`;
+  // Use production URL as fallback instead of localhost
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://tykhai.vercel.app";
+  const referralLink = `${baseUrl}/register?ref=${referralCode}`;
 
   const referredUsers = await prisma.user.findMany({
     where: { referredById: security.user.userId },
