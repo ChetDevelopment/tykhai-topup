@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 // we only forward a fixed set of game slugs and strip out anything else.
 
 const schema = z.object({
-  slug: z.enum(["mobile-legends", "genshin-impact", "honkai-star-rail"]),
+  slug: z.enum(["mobile-legends", "genshin-impact", "honkai-star-rail", "free-fire"]),
   uid: z.string().regex(/^\d{5,12}$/, "UID must be 5–12 digits"),
   serverId: z.string().regex(/^\d{1,6}$/, "Server/Zone must be digits").optional(),
 });
@@ -25,6 +25,7 @@ const UPSTREAM: Record<
   "mobile-legends":    { path: "/nickname/ml",      needsServer: true  },
   "genshin-impact":    { path: "/nickname/genshin", needsServer: true  },
   "honkai-star-rail":  { path: "/nickname/starrail", needsServer: true },
+  "free-fire":         { path: "/nickname/ff",      needsServer: false },
 };
 
 export async function POST(req: NextRequest) {
@@ -43,6 +44,64 @@ export async function POST(req: NextRequest) {
     );
   }
   const { slug, uid, serverId } = parsed.data;
+
+  // Free Fire uses a different upstream API (camrapidx)
+  if (slug === "free-fire") {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(
+        `https://v1.camrapidx.com/validate_user/FreeFire_LevelUpPass.php?UserID=${encodeURIComponent(uid)}`,
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "Ty Khai TopUp/1.0",
+          },
+          cache: "no-store",
+          signal: controller.signal,
+        },
+      );
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        return NextResponse.json(
+          { success: false, error: "Lookup failed" },
+          { status: 502 }
+        );
+      }
+
+      const data: unknown = await res.json().catch(() => null);
+      if (!data || typeof data !== "object") {
+        return NextResponse.json(
+          { success: false, error: "Invalid response" },
+          { status: 502 }
+        );
+      }
+
+      const d = data as { status?: string; username?: string };
+      if (d.status !== "APPROVED" || !d.username) {
+        return NextResponse.json(
+          { success: false, error: "Player not found — check your ID." },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        name: d.username,
+        uid,
+        serverId: null,
+      });
+    } catch (err) {
+      const aborted = err instanceof Error && err.name === "AbortError";
+      return NextResponse.json(
+        { success: false, error: aborted ? "Lookup timed out" : "Network error" },
+        { status: 504 }
+      );
+    }
+  }
+
   const cfg = UPSTREAM[slug];
 
   if (cfg.needsServer && !serverId) {

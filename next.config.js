@@ -18,6 +18,21 @@ const nextConfig = {
   // Next.js/Vercel must leave it as an external CommonJS module so that those
   // font assets are resolvable at runtime in the serverless lambda.
   serverExternalPackages: ["pdfkit"],
+  // Redirect /free-fire to /games/free-fire
+  async redirects() {
+    return [
+      {
+        source: "/free-fire",
+        destination: "/games/free-fire",
+        permanent: true,
+      },
+      {
+        source: "/free-fire/:path*",
+        destination: "/games/free-fire/:path*",
+        permanent: true,
+      },
+    ];
+  },
   // Security headers
   async headers() {
     return [
