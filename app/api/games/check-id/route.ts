@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 
 const schema = z.object({
   slug: z.enum(["mobile-legends", "genshin-impact", "honkai-star-rail", "free-fire"]),
-  uid: z.string().min(4, "UID must be at least 4 characters").max(20, "UID too long"),
+  uid: z.string().min(4, "UID must be at least 4 characters").max(64, "UID too long"),
   serverId: z.string().min(1).max(6).optional(),
 });
 
@@ -73,9 +73,9 @@ export async function POST(req: NextRequest) {
     }
   } else {
     // General validation for other games (already done by schema)
-    if (!/^[a-zA-Z0-9-_]{4,20}$/.test(uid.trim())) {
+    if (!/^[a-zA-Z0-9-_]{4,64}$/.test(uid.trim())) {
       return NextResponse.json(
-        { success: false, error: "Invalid UID format (4-20 characters, letters/digits only)" },
+        { success: false, error: "Invalid UID format (4-64 characters, letters/digits only)" },
         { status: 400 }
       );
     }

@@ -20,14 +20,15 @@ export function calcKhr(usd: number, rate: number = 4100): number {
   return Math.round(usd * rate / 100) * 100; // round to nearest 100 KHR
 }
 
-// Validate UID format - strict: alphanumeric + dash/underscore only, 4-20 chars
+// Validate UID format - strict: alphanumeric + dash/underscore only, 4-64 chars
 // Prevents injection attacks (No < > " ' ; etc.)
+// Free Fire UIDs can be up to 32 chars (hex format)
 export function isValidUid(uid: string): boolean {
   if (typeof uid !== "string") return false;
   const trimmed = uid.trim();
   // Only allow safe characters: alphanumeric, hyphens, underscores
-  // Length: 4-20 characters
-  return /^[a-zA-Z0-9-_]{4,20}$/.test(trimmed);
+  // Length: 4-64 characters (accommodates Free Fire hex UIDs)
+  return /^[a-zA-Z0-9-_]{4,64}$/.test(trimmed);
 }
 
 // Validate server zone id
