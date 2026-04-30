@@ -62,11 +62,23 @@ export async function POST(req: NextRequest) {
   console.log("[check-id] Parsed:", { slug, uid, serverId });
   
   // Validate UID format based on game
-  if (slug === "mobile-legends" && (!uid || !/^\d{5,12}$/.test(uid.trim()))) {
-    return NextResponse.json(
-      { success: false, error: "Mobile Legends UID must be 5-12 digits" },
-      { status: 400 }
-    );
+  // Mobile Legends: 5-12 digits
+  // Free Fire, Genshin, HSR: use general validation
+  if (slug === "mobile-legends") {
+    if (!/^\d{5,12}$/.test(uid.trim())) {
+      return NextResponse.json(
+        { success: false, error: "Mobile Legends UID must be 5-12 digits" },
+        { status: 400 }
+      );
+    }
+  } else {
+    // General validation for other games (already done by schema)
+    if (!/^[a-zA-Z0-9-_]{4,20}$/.test(uid.trim())) {
+      return NextResponse.json(
+        { success: false, error: "Invalid UID format (4-20 characters, letters/digits only)" },
+        { status: 400 }
+      );
+    }
   }
 
   // Free Fire uses a different upstream API (camrapidx)
