@@ -6,7 +6,6 @@
  */
 
 import crypto from "crypto";
-import { BakongKHQR, khqrData, IndividualInfo } from "bakong-khqr";
 import {
   PaymentMethod,
   PaymentCurrency,
@@ -20,6 +19,26 @@ import {
 import { hashSha256, encryptField } from "./encryption";
 import { prisma } from "./prisma";
 import { logSecurityEvent } from "./security";
+
+// ===================== KHQR Generation (Pure Node.js, no external deps) =====================
+// Generates EMV-compliant KHQR per Bakong spec v2.7
+// Reference: https://bakong.nbc.gov.kh/download/KHQR/integration/KHQR%20SDK%20Document.pdf
+
+function tl(tag: string, value: string): string {
+  return tag + value.length.toString().padStart(2, "0") + value;
+}
+
+function crc16(data: string): string {
+  let crc = 0xffff;
+  for (let i = 0; i < data.length; i++) {
+    crc ^= data.charCodeAt(i) << 8;
+    for (let j = 0; j < 8; j++) {
+      crc = crc & 0x8000 ? (crc << 1) ^ 0x1021 : crc << 1;
+    }
+    crc &= 0xffff;
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
 
 // ===================== Configuration =====================
 const SIM_MODE = process.env.PAYMENT_SIMULATION_MODE === "true";
@@ -105,41 +124,40 @@ async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitRes
     console.log("[payment:bakong] Generating QR with ref:", paymentRef);
     console.log("[payment:bakong] Account:", BAKONG_ACCOUNT, "City:", BAKONG_MERCHANT_CITY);
     console.log("[payment:bakong] Currency:", isKhr ? "KHR" : "USD", "Amount:", amount);
+    console.log("[payment:bakong] Expires at:", expiresAt.toISOString());
 
-    const optionalData = {
-      currency: isKhr ? khqrData.currency.khr : khqrData.currency.usd,
-      amount: Number(amount),
-      billNumber: paymentRef,
-      expirationTimestamp: expiresAt.getTime(),
-    };
+    // Generate KHQR locally (pure Node.js, no external deps)
+    // This avoids Vercel bundling issues with bakong-khqr package
+    const creationTimestamp = Date.now().toString();
+    const expirationTimestamp = expiresAt.getTime().toString();
+    const currencyCode = isKhr ? "116" : "840";
+    const amountStr = Number(amount).toFixed(2).replace(/\.?0+$/, "").padStart(11, "0");
 
-    const individualInfo = new IndividualInfo(
-      BAKONG_ACCOUNT,
-      BAKONG_MERCHANT_NAME,
-      BAKONG_MERCHANT_CITY,
-      optionalData
-    );
+    let qrString = "";
+    qrString += tl("00", "01");
+    qrString += tl("01", "12");
+    qrString += tl("29", tl("00", BAKONG_ACCOUNT));
+    qrString += tl("52", "5999");
+    qrString += tl("53", currencyCode);
+    qrString += tl("54", amountStr);
+    qrString += tl("58", "KH");
+    qrString += tl("59", BAKONG_MERCHANT_NAME);
+    qrString += tl("60", BAKONG_MERCHANT_CITY);
 
-    const khqr = new BakongKHQR();
-    const response = khqr.generateIndividual(individualInfo);
+    const timestampInner = tl("00", creationTimestamp) + tl("01", expirationTimestamp);
+    qrString += tl("99", timestampInner);
 
-    console.log("[payment:bakong] Response status:", JSON.stringify(response.status));
-    console.log("[payment:bakong] Response data exists:", !!response.data);
-
-    if (response.status?.errorCode) {
-      throw new Error(response.status.message || "KHQR generation failed");
+    if (paymentRef) {
+      qrString += tl("62", tl("01", paymentRef));
     }
 
-    if (!response.data?.qr) {
-      throw new Error("QR string is empty - response.data is: " + JSON.stringify(response.data));
-    }
+    const crcPrefix = "6304";
+    qrString += crcPrefix + crc16(qrString + crcPrefix);
 
-    const qrString = response.data.qr;
-    const md5String = response.data.md5;
+    const md5String = crypto.createHash("md5").update(qrString).digest("hex");
 
     console.log("[payment:bakong] QR generated, length:", qrString.length);
     console.log("[payment:bakong] MD5 hash:", md5String);
-    console.log("[payment:bakong] QR expires at:", expiresAt.toISOString());
 
     const qrStringEnc = encryptField(qrString);
 
