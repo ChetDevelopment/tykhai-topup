@@ -103,6 +103,8 @@ async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitRes
 
   try {
     console.log("[payment:bakong] Generating QR with ref:", paymentRef);
+    console.log("[payment:bakong] Account:", BAKONG_ACCOUNT, "City:", BAKONG_MERCHANT_CITY);
+    console.log("[payment:bakong] Currency:", isKhr ? "KHR" : "USD", "Amount:", amount);
 
     const optionalData = {
       currency: isKhr ? khqrData.currency.khr : khqrData.currency.usd,
@@ -121,8 +123,15 @@ async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitRes
     const khqr = new BakongKHQR();
     const response = khqr.generateIndividual(individualInfo);
 
+    console.log("[payment:bakong] Response status:", JSON.stringify(response.status));
+    console.log("[payment:bakong] Response data exists:", !!response.data);
+
     if (response.status?.errorCode) {
       throw new Error(response.status.message || "KHQR generation failed");
+    }
+
+    if (!response.data?.qr) {
+      throw new Error("QR string is empty - response.data is: " + JSON.stringify(response.data));
     }
 
     const qrString = response.data.qr;
