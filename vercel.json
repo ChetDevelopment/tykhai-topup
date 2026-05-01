@@ -10,7 +10,7 @@
   "crons": [
     {
       "path": "/api/cron/process-deliveries",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
