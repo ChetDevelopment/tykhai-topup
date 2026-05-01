@@ -148,24 +148,45 @@ async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitRes
   const paymentRef = `TY${Date.now()}${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
 
   try {
-    // Generate QR locally using bakong-khqr-npm library
-    // This avoids the 404 error from the deprecated/internal NBC endpoint
-    const khqr = new KHQR();
+    // Generate QR using Bakong library with token for proper registration
+    const khqr = new KHQR(BAKONG_TOKEN);
+    
+    // Use numeric-only bill number (Bakong might reject alphanumeric)
+    const numericRef = Date.now().toString();
+    
+    console.log("[payment:bakong] Generating QR with ref:", numericRef);
+    
     const qrString = khqr.create_qr({
       bank_account: BAKONG_ACCOUNT,
       merchant_name: BAKONG_MERCHANT_NAME,
       merchant_city: BAKONG_MERCHANT_CITY,
       amount: Number(amount),
       currency: currency,
-      bill_number: paymentRef,
+      bill_number: numericRef,
       static: false,
     });
 
+    console.log("[payment:bakong] QR generated, length:", qrString.length);
+    
     const md5String = khqr.generate_md5(qrString);
+    console.log("[payment:bakong] MD5 hash:", md5String);
+    
+    // Verify QR was registered by checking immediately
+    setTimeout(async () => {
+      try {
+        const verifyKhqr = new KHQR(BAKONG_TOKEN);
+        const result = await verifyKhqr.get_payment(md5String);
+        console.log("[payment:bakong] Verification test:", result ? "QR registered" : "QR might not be registered");
+      } catch (e) {
+        console.log("[payment:bakong] Verification error (expected):", e.message);
+      }
+    }, 1000);
+    
     const qrStringEnc = encryptField(qrString);
 
-    // QR expires after 60 minutes (rule out clock sync issues)
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    // QR expires after 10 minutes (Bakong dynamic QR default)
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    console.log("[payment:bakong] QR expires at:", expiresAt.toISOString());
 
     // Log payment initiation
     await logPaymentEvent({
@@ -207,14 +228,17 @@ export async function checkBakongPayment(
     // Get order from DB to retrieve md5String
     const order = await prisma.order.findUnique({
       where: { orderNumber },
-      select: { metadata: true, status: true }
+      select: { metadata: true, status: true, paymentRef: true }
     });
 
     if (!order?.metadata?.bakongMd5) {
+      console.log("[payment:bakong] No md5String found for order:", orderNumber);
       return { status: "PENDING", paid: false };
     }
 
-    // Use library for verification (more robust error handling)
+    console.log("[payment:bakong] Checking payment for order:", orderNumber, "md5:", order.metadata.bakongMd5);
+    
+    // Use library for verification
     const khqr = new KHQR(BAKONG_TOKEN);
     const paymentData = await khqr.get_payment(order.metadata.bakongMd5);
 

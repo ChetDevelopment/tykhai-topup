@@ -1,0 +1,53 @@
+Subject: URGENT - Bakong API Token Generation Issue - Tokens Show Wrong Expiration Date
+
+Dear Bakong Support Team,
+
+I am writing to report a critical issue with the Bakong API token generation system at https://api-bakong.nbc.gov.kh.
+
+PROBLEM DESCRIPTION:
+When I generate/renew tokens through the portal, the tokens contain INVALID expiration dates that are causing our payment system to fail.
+
+ISSUE DETAILS:
+1. Portal shows: "Expire Date: Mon Jul 20 2026 06:55:36 GMT"
+   But decoded token shows: exp: 1748570708 (April 30, 2025)
+
+2. Portal shows: "Expire Date: Thu Jul 30 2026 10:45:14 GMT"
+   But decoded token shows: exp: 1748590920 (May 30, 2025)
+
+3. Most recently generated token:
+   Portal shows: "Expire Date: Thu Jul 30 2026 10:45:14 GMT"
+   Actual token decodes to: exp: 1748590920 = May 30, 2025
+
+TECHNICAL EVIDENCE:
+Decoded JWT payload example:
+{
+  "data": {"id": "f8d77c944511450a"},
+  "iat": 1748499200,  // Issued: June 13, 2025
+  "exp": 1748590920   // Expires: May 30, 2025 (BEFORE issue date!)
+}
+
+IMPACT:
+- QR codes generated with these tokens show as "EXPIRED" in Bakong app
+- Customers cannot make payments
+- Our business is losing revenue
+- The exp field is set to a PAST date (2025) when it should be 90 days in the FUTURE (2026)
+
+REGISTERED EMAILS:
+- ka383768@gmail.com
+- jmyt6677@gmail.com
+- satvichetnice1@gmail.com
+
+REQUEST:
+1. Please fix the token generation system immediately
+2. Generate valid tokens with correct exp (90 days from now)
+3. Verify the exp field is AFTER the iat field
+
+This is blocking our production payment system. We need this resolved urgently.
+
+Thank you,
+Vichet SAT
+Ty Khai TopUp
+Email: ka383768@gmail.com
+Phone: [Your phone number]
+
+Contact for technical details: ka383768@gmail.com

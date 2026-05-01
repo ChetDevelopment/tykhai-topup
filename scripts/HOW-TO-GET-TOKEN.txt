@@ -1,0 +1,20 @@
+1. OPEN THIS LINK IN YOUR BROWSER:
+   https://api-bakong.nbc.gov.kh/login
+
+2. LOGIN with your email: ka383768@gmail.com
+
+3. In your DASHBOARD, look for:
+   - "Generate New Token" button
+   - OR "Renew Token" option
+   - OR "API Token" section
+
+4. COPY the new token (it will look like: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7ImlkIjoi...)
+
+5. UPDATE .env.production:
+   BAKONG_TOKEN=your_new_token_here
+
+6. RESTART your server:
+   npm run dev
+
+NOTE: The token I decoded expires May 30, 2025 - it's over 11 months old!
+The new token will be valid for 90 days from issue date.
