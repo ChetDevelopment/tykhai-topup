@@ -78,6 +78,7 @@ export interface PaymentVerificationResult {
   transactionId?: string;
   paidAt?: Date;
   rawResponse?: unknown;
+  message?: string;
 }
 
 // ===================== Payment Webhook =====================

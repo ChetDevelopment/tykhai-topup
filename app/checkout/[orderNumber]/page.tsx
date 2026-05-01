@@ -41,8 +41,8 @@ interface OrderPayment {
   paidAt: string | null;
 }
 
-const TERMINAL = new Set(["DELIVERED", "FAILED", "REFUNDED", "CANCELLED"]);
-const PAID_STATES = new Set(["PAID", "PROCESSING", "DELIVERED"]);
+const TERMINAL = new Set(["DELIVERED", "FAILED", "CANCELLED", "REFUNDED", "FAILED_FINAL"]);
+const SUCCESS_STATES = new Set(["PAID", "QUEUED", "DELIVERING", "DELIVERED"]);
 
 function qrImageUrl(payload: string, size = 320): string {
   const enc = encodeURIComponent(payload);
@@ -96,6 +96,7 @@ export default function CheckoutPage() {
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
   const [simulating, setSimulating] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollAttemptsRef = useRef(0);
 
   const [showReceipt, setShowReceipt] = useState(false);
   const [activeTab, setActiveTab] = useState<"receipt" | "review">("receipt");
@@ -104,6 +105,10 @@ export default function CheckoutPage() {
   const [user, setUser] = useState<any>(null);
   const [cancelling, setCancelling] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+
+  const MAX_POLL_ATTEMPTS = 200;
+  const POLL_INTERVAL_MS = 5000;
+  const INITIAL_DELAY_MS = 5000;
 
   useEffect(() => {
     fetch("/api/user/me", { cache: "no-store" })
@@ -114,40 +119,23 @@ export default function CheckoutPage() {
             setUser(data.user);
           }
         }
-        // Continue even if not logged in - order might be in session
         setAuthReady(true);
       })
       .catch(() => setAuthReady(true));
   }, [router]);
-
-  const verifyPayment = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/orders/${encodeURIComponent(orderNumber)}`, {
-        method: "POST",
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("Verification failed");
-      const data = await res.json();
-      return data;
-    } catch (err: any) {
-      console.error("Payment verification error:", err);
-      return null;
-    }
-  }, [orderNumber]);
 
   const fetchOrder = useCallback(async () => {
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(orderNumber)}`, { cache: "no-store" });
       if (!res.ok) throw new Error("Order not found");
       const data = await res.json();
-      
-      // Show popup immediately when status changes to DELIVERED/PAID
+
       const prevStatus = order?.status;
       const newStatus = data.status;
-      if ((newStatus === "DELIVERED" || newStatus === "PAID") && prevStatus !== "DELIVERED" && prevStatus !== "PAID") {
+
+      if (SUCCESS_STATES.has(newStatus) && !SUCCESS_STATES.has(prevStatus || "")) {
         setShowReceipt(true);
         setHasAutoOpened(true);
-        // Also show success toast message
         const toast = document.getElementById('success-toast');
         if (toast) {
           toast.classList.remove('hidden');
@@ -155,15 +143,34 @@ export default function CheckoutPage() {
           setTimeout(() => toast.classList.add('hidden'), 5000);
         }
       }
-      
+
       setOrder(data);
-      
       return data;
     } catch (err: any) {
       setError(err.message);
       return null;
     }
-  }, [orderNumber, hasAutoOpened]);
+  }, [orderNumber, order?.status]);
+
+  const verifyPaymentStatus = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderNumber)}/verify`, {
+        method: "POST",
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+
+      // Always refresh order data after verify (verify may have just changed status)
+      if (data.isPaid || data.status === "QUEUED" || data.status === "DELIVERING" || data.status === "DELIVERED") {
+        fetchOrder();
+      }
+
+      return data;
+    } catch {
+      return null;
+    }
+  }, [orderNumber, fetchOrder]);
 
   const handleCancel = async () => {
     setCancelling(true);
@@ -188,13 +195,33 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!order) return;
-    if (TERMINAL.has(order.status) || PAID_STATES.has(order.status)) {
+
+    if (TERMINAL.has(order.status) || order.status === "DELIVERED") {
       if (pollRef.current) clearInterval(pollRef.current);
       return;
     }
-    pollRef.current = setInterval(fetchOrder, 3000);
+
+    if (remainingMs !== null && remainingMs <= 0) {
+      if (pollRef.current) clearInterval(pollRef.current);
+      return;
+    }
+
+    const isFirstPoll = pollAttemptsRef.current === 0;
+    const delay = isFirstPoll ? INITIAL_DELAY_MS : POLL_INTERVAL_MS;
+
+    pollRef.current = setInterval(() => {
+      pollAttemptsRef.current += 1;
+
+      if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        return;
+      }
+
+      verifyPaymentStatus();
+    }, delay);
+
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [order, fetchOrder]);
+  }, [order, verifyPaymentStatus, remainingMs]);
 
   useEffect(() => {
     if (!order?.paymentExpiresAt) return;
@@ -207,8 +234,8 @@ export default function CheckoutPage() {
     return () => clearInterval(id);
   }, [order?.paymentExpiresAt]);
 
-  const isExpired = remainingMs !== null && remainingMs <= 0 && !PAID_STATES.has(order?.status ?? "");
-  const isPaid = order ? PAID_STATES.has(order.status) : false;
+  const isExpired = remainingMs !== null && remainingMs <= 0 && !SUCCESS_STATES.has(order?.status ?? "");
+  const isPaid = order ? SUCCESS_STATES.has(order.status) : false;
   const qrTitle = order ? truncateLabel(order.productName || order.gameName) : "";
   const qrSubtitle = order?.gameName ? `${order.gameName} top up` : "Secure KHQR payment";
   const paymentCurrency = getOrderCurrency(order);

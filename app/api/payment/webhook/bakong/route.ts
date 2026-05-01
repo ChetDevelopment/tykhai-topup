@@ -4,37 +4,18 @@ export const dynamic = "force-dynamic";
 import {
   checkBakongPayment,
   validatePaymentAmount,
-  processSuccessfulPayment,
+  markOrderPaid,
 } from "@/lib/payment";
-import { PaymentError } from "@/lib/payment-types";
 import { notifyTelegram, escapeHtml } from "@/lib/telegram";
-import { updateUserTotalSpent } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeInput, isSuspiciousRequest, logSecurityEvent } from "@/lib/security";
 import { hashSha256, verifyWebhookSignature } from "@/lib/encryption";
-import { canTransition } from "@/lib/payment-types";
+import { z } from "zod";
 
-// Webhook replay protection using database (serverless-safe)
-// In-memory cache for quick deduplication (within same instance)
+// Webhook replay protection
 const recentWebhookCache = new Set<string>();
 const MAX_CACHE_SIZE = 500;
 
-// Dynamic exchange rate
-async function getExchangeRate(): Promise<number> {
-  try {
-    const settings = await prisma.settings.findFirst();
-    if (settings?.exchangeRate) {
-      return settings.exchangeRate;
-    }
-  } catch {
-    // Settings table might not exist, use fallback
-  }
-  return parseFloat(process.env.EXCHANGE_RATE_KHR || "4100");
-}
-
-import { z } from "zod";
-
-// Webhook payload validation schema
 const WebhookSchema = z.object({
   md5: z.string().optional(),
   md5hash: z.string().optional(),
@@ -49,9 +30,8 @@ const WebhookSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  // Check for suspicious requests
   if (isSuspiciousRequest(req)) {
-    await logSecurityEvent("SUSPICIOUS_WEB_HOOK", { url: req.url }, req);
+    await logSecurityEvent("SUSPICIOUS_WEBHOOK", { url: req.url }, req);
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -59,174 +39,177 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const rawBodyString = JSON.stringify(body);
 
-    // Validate webhook payload with Zod
     const parseResult = WebhookSchema.safeParse(body);
     if (!parseResult.success) {
       await logSecurityEvent("INVALID_WEBHOOK_PAYLOAD", { errors: parseResult.error.errors }, req);
-      return NextResponse.json({ error: "Invalid payload format" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
     const validatedBody = parseResult.data;
 
-    // Verify webhook signature if provided
     const signature = req.headers.get("x-bakong-signature") || req.headers.get("x-signature");
     if (signature && process.env.BAKONG_WEBHOOK_SECRET) {
       const isValid = verifyWebhookSignature(rawBodyString, signature, process.env.BAKONG_WEBHOOK_SECRET);
       if (!isValid) {
-        await logSecurityEvent("INVALID_WEB_HOOK_SIGNATURE", { signature }, req);
+        await logSecurityEvent("INVALID_WEBHOOK_SIGNATURE", { signature }, req);
         return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
       }
     }
 
-    // Get payment reference from validated payload
-    const paymentRef = sanitizeInput(validatedBody.md5 || validatedBody.md5hash || validatedBody.transaction_id || "");
-    if (!paymentRef || paymentRef.length < 10) {
-      return NextResponse.json({ error: "Invalid payment reference" }, { status: 400 });
+    const md5Hash = sanitizeInput(validatedBody.md5 || validatedBody.md5hash || "");
+    if (!md5Hash || md5Hash.length !== 32) {
+      return NextResponse.json({ error: "Invalid MD5 hash" }, { status: 400 });
     }
 
-    // REPLAY PROTECTION (Database-based for serverless safety)
+    // Replay protection
     const payloadHash = hashSha256(rawBodyString);
-    if (!payloadHash) {
-      return NextResponse.json({ error: "Failed to hash payload" }, { status: 500 });
-    }
-
-    // Quick in-memory check first (for performance)
-    if (recentWebhookCache.has(payloadHash)) {
-      await logSecurityEvent("WEB_HOOK_REPLAY_ATTEMPT", { paymentRef }, req);
+    if (payloadHash && recentWebhookCache.has(payloadHash)) {
       return NextResponse.json({ ok: true, skipped: true, reason: "already_processed" });
     }
 
-    // Convert to SHA256 for internal lookup
-    const secureRef = hashSha256(paymentRef).slice(0, 64);
-
-    // Database check for persistent replay protection
     const existingLog = await prisma.paymentLog.findFirst({
       where: {
-        OR: [
-          { paymentRef: paymentRef },
-          { paymentRef: secureRef },
-          { metadata: { contains: payloadHash } },
-        ],
         event: "WEBHOOK_PROCESSED",
+        metadata: { path: ["payloadHash"], string_contains: payloadHash || "" },
       },
+      select: { id: true },
     });
 
     if (existingLog) {
-      await logSecurityEvent("WEB_HOOK_REPLAY_ATTEMPT_DB", { paymentRef }, req);
-      return NextResponse.json({ ok: true, skipped: true, reason: "already_processed" });
-    }
-
-    if (processedWebhooks.has(payloadHash)) {
-      await logSecurityEvent("WEBHOOK_REPLAY_ATTEMPT", { paymentRef }, req);
       return NextResponse.json({ ok: true, skipped: true, reason: "already_processed" });
     }
 
     const order = await prisma.order.findFirst({
       where: {
-        OR: [{ paymentRef }, { paymentRef: secureRef }],
+        metadata: { path: ["bakongMd5"], string_contains: md5Hash },
       },
-      include: { game: true, product: true, user: true },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        amountUsd: true,
+        amountKhr: true,
+        currency: true,
+        paymentRef: true,
+        playerUid: true,
+      },
     });
 
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    if (!canTransition(order.status as any, "DELIVERED")) {
-      return NextResponse.json({ ok: true, skipped: true, reason: `status_already_${order.status}` });
+    if (order.status === "PAID" || order.status === "QUEUED" || order.status === "DELIVERING" || order.status === "DELIVERED") {
+      return NextResponse.json({ ok: true, skipped: true, reason: `already_${order.status}` });
     }
 
-    // Check payment status with Bakong
-    const result = await checkBakongPayment(paymentRef);
-    if (!result || !result.paid) {
+    const bakongResult = await checkBakongPayment(md5Hash);
+
+    if (!bakongResult || !bakongResult.paid) {
       return NextResponse.json({ status: "UNPAID" });
     }
 
-    // CRITICAL: Verify paid amount matches order amount
-    if (result.amount) {
-      const paidAmount = parseFloat(String(result.amount));
-      const exchangeRate = await getExchangeRate();
-
-      const { valid, expected } = validatePaymentAmount(
+    if (bakongResult.amount) {
+      const paidAmount = parseFloat(String(bakongResult.amount));
+      const validation = validatePaymentAmount(
         order.amountUsd,
-        order.currency,
+        order.currency === "KHR" ? order.amountKhr : undefined,
         paidAmount,
-        order.currency === "KHR" ? undefined : exchangeRate
+        order.currency
       );
 
-      if (!valid) {
+      if (!validation.valid) {
         await logSecurityEvent("PAYMENT_AMOUNT_MISMATCH", {
           orderNumber: order.orderNumber,
           paidAmount,
-          expectedAmount: expected,
+          expectedAmount: order.currency === "KHR" ? order.amountKhr : order.amountUsd,
           currency: order.currency,
-          exchangeRate,
+          message: validation.message,
         }, req);
 
-        await prisma.order.updateMany({
+        await prisma.order.update({
           where: { id: order.id },
-          data: {
-            status: "FAILED",
-            failureReason: `Payment amount mismatch: paid ${paidAmount} ${order.currency}, expected ${expected.toFixed(2)}`,
-          },
+          data: { status: "FAILED", failureReason: `Payment amount mismatch: ${validation.message}` },
         });
 
-        return NextResponse.json(
-          { error: "Payment amount mismatch", status: "FAILED" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Amount mismatch", status: "FAILED" }, { status: 400 });
       }
     }
 
-    // Log the webhook as processed (database-based replay protection)
-    recentWebhookCache.add(payloadHash);
-    // Keep in-memory cache size manageable
-    if (recentWebhookCache.size > MAX_CACHE_SIZE) {
-      const iterator = recentWebhookCache.values();
-      for (let i = 0; i < MAX_CACHE_SIZE / 2; i++) {
-        const next = iterator.next();
-        if (!next.done) {
-          recentWebhookCache.delete(next.value);
+    if (validatedBody.toAccountId && validatedBody.toAccountId !== process.env.BAKONG_ACCOUNT) {
+      await logSecurityEvent("WEBHOOK_MERCHANT_MISMATCH", {
+        orderNumber: order.orderNumber,
+        expectedAccount: process.env.BAKONG_ACCOUNT,
+        receivedAccount: validatedBody.toAccountId,
+      }, req);
+
+      return NextResponse.json({ error: "Merchant account mismatch" }, { status: 400 });
+    }
+
+    const markResult = await markOrderPaid(order.id, {
+      paymentRef: order.paymentRef || `WEBHOOK-${md5Hash.slice(0, 16)}`,
+      amount: bakongResult.amount ? parseFloat(String(bakongResult.amount)) : order.amountUsd,
+      currency: bakongResult.currency || order.currency,
+      transactionId: bakongResult.transactionId,
+      verifiedBy: "webhook",
+    });
+
+    if (!markResult.success && markResult.status !== "QUEUED") {
+      return NextResponse.json({ status: markResult.status, message: markResult.message }, { status: 400 });
+    }
+
+    if (payloadHash) {
+      recentWebhookCache.add(payloadHash);
+      if (recentWebhookCache.size > MAX_CACHE_SIZE) {
+        const iterator = recentWebhookCache.values();
+        for (let i = 0; i < MAX_CACHE_SIZE / 2; i++) {
+          const next = iterator.next();
+          if (!next.done) recentWebhookCache.delete(next.value);
         }
       }
     }
 
-    // Persistent database log for cross-instance replay protection
     await prisma.paymentLog.create({
       data: {
         orderId: order.id,
-        paymentRef: secureRef,
+        paymentRef: order.paymentRef,
         event: "WEBHOOK_PROCESSED",
         status: "SUCCESS",
-        amount: result.amount ? parseFloat(String(result.amount)) : undefined,
-        currency: result.currency || order.currency,
+        amount: bakongResult.amount ? parseFloat(String(bakongResult.amount)) : undefined,
+        currency: bakongResult.currency || order.currency,
         metadata: JSON.stringify({ payloadHash, timestamp: new Date().toISOString() }),
       },
     });
 
-    // Process the successful payment
-    await processSuccessfulPayment(order.id, {
-      paymentRef: secureRef,
-      amount: result.amount ? parseFloat(String(result.amount)) : order.amountUsd,
-      currency: result.currency || order.currency,
-      transactionId: result.transactionId,
+    notifyTelegramPayment(order).catch(() => {});
+
+    return NextResponse.json({
+      status: "PAID",
+      orderNumber: order.orderNumber,
+      deliveryStatus: "QUEUED",
     });
-
-    // Notify via Telegram
-    const baseUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
-    const link = baseUrl ? `\n<a href="${baseUrl}/admin/orders/${order.orderNumber}">Open in admin</a>` : "";
-    await notifyTelegram(
-      `💰 <b>New paid order (Bakong Webhook)</b>\n` +
-        `<b>#${escapeHtml(order.orderNumber)}</b>\n` +
-        `${escapeHtml(order.game.name)} — ${escapeHtml(order.product.name)}\n` +
-        `UID: <code>${escapeHtml(order.playerUid)}</code>\n` +
-        `Amount: ${order.currency === "KHR" ? `${Math.round(order.amountKhr ?? 0).toLocaleString()} ៛` : `$${order.amountUsd.toFixed(2)}`}${link}`
-    );
-
-    return NextResponse.json({ status: "PAID", orderNumber: order.orderNumber });
   } catch (err) {
-    console.error("[bakong-webhook] error:", err);
     await logSecurityEvent("WEBHOOK_ERROR", { error: String(err) }, req);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
+}
+
+async function notifyTelegramPayment(order: any) {
+  const fullOrder = await prisma.order.findUnique({
+    where: { id: order.id },
+    include: { game: true, product: true },
+  });
+
+  if (!fullOrder) return;
+
+  const baseUrl = process.env.PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || "";
+  const link = baseUrl ? `\n<a href="${baseUrl}/admin/orders/${fullOrder.orderNumber}">Open in admin</a>` : "";
+
+  await notifyTelegram(
+    `💰 <b>New paid order (Bakong Webhook)</b>\n` +
+      `<b>#${escapeHtml(fullOrder.orderNumber)}</b>\n` +
+      `${escapeHtml(fullOrder.game.name)} — ${escapeHtml(fullOrder.product.name)}\n` +
+      `UID: <code>${escapeHtml(fullOrder.playerUid)}</code>\n` +
+      `Amount: ${fullOrder.currency === "KHR" ? `${Math.round(fullOrder.amountKhr ?? 0).toLocaleString()} ៛` : `$${fullOrder.amountUsd.toFixed(2)}`}${link}`
+  );
 }
