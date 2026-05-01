@@ -43,12 +43,12 @@ export default function Header() {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-3 group">
-          <div className="relative h-11 w-11 flex items-center justify-center rounded-2xl bg-gradient-to-br from-royal-primary via-royal-accent to-royal-gold p-[1px] transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-2xl shadow-royal-primary/20">
+          <div className="relative h-16 w-16 flex items-center justify-center rounded-2xl bg-gradient-to-br from-royal-primary via-royal-accent to-royal-gold p-[1px] transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-2xl shadow-royal-primary/20">
             <div className="h-full w-full rounded-[15px] bg-royal-bg flex items-center justify-center overflow-hidden">
-              <img 
-                src="/icon-512x512.png" 
-                alt="Ty Khai TopUp" 
-                className="h-8 w-8 object-contain"
+              <img
+                src="/icon-512x512.png"
+                alt="Ty Khai TopUp"
+                className="h-12 w-12 object-contain"
               />
             </div>
           </div>
