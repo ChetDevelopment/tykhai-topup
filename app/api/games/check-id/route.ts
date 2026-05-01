@@ -45,9 +45,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  // Debug logging for production
-  console.log("[check-id] Request body:", JSON.stringify(body));
-
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     console.error("[check-id] Validation error:", parsed.error.issues);
@@ -60,8 +57,6 @@ export async function POST(req: NextRequest) {
   
   // Handle serverId: convert empty string to undefined
   const serverId = rawServerId && rawServerId.trim().length > 0 ? rawServerId.trim() : undefined;
-  
-  console.log("[check-id] Parsed:", { slug, uid, serverId });
   
   // Validate UID format based on game
   // Mobile Legends: 5-12 digits
@@ -106,8 +101,6 @@ export async function POST(req: NextRequest) {
     upstreamUrl += `&ZoneID=${encodeURIComponent(serverId)}`;
   }
 
-  console.log("[check-id] Calling upstream:", upstreamUrl);
-
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -143,14 +136,12 @@ export async function POST(req: NextRequest) {
       const msg = d.message && d.message !== "Successfully Verified" 
         ? d.message 
         : "Player not found — check your ID and zone.";
-      console.error("[check-id] Player not found:", { uid, serverId, slug, response: d });
       return NextResponse.json(
         { success: false, error: msg },
         { status: 404 }
       );
     }
 
-    console.log("[check-id] Success:", { uid, username: d.username });
     return NextResponse.json({
       success: true,
       name: d.username,

@@ -41,7 +41,6 @@ interface Game {
 }
 
 export default function TopUpForm({ game, products }: { game: Game; products: Product[] }) {
-  console.log("[TopUpForm] Render:", { slug: game.slug, name: game.name, supportsLookup: LOOKUP_SLUGS.has(game.slug) });
   const { format, currency, toKhr } = useCurrency();
   const [user, setUser] = useState<any>(null);
   const [boughtProductIds, setBoughtProductIds] = useState<string[]>([]);
@@ -122,15 +121,11 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
   const [needsRefresh, setNeedsRefresh] = useState(false);
 
   useEffect(() => {
-    console.log("[TopUpForm] UID/Server changed:", { uid, serverId, supportsLookup, useZoneField });
     setNeedsRefresh(true);
   }, [uid, serverId]);
 
   useEffect(() => {
-    console.log("[TopUpForm] Lookup effect triggered:", { supportsLookup, needsRefresh, gameSlug: game.slug });
-
     if (!supportsLookup || !needsRefresh) {
-      console.log("[TopUpForm] Lookup skipped:", { supportsLookup, needsRefresh });
       return;
     }
 
@@ -140,8 +135,6 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
     const uidValid = isValidUid(uid);
     const serverValid = !useZoneField || serverId.trim().length > 0;
 
-    console.log("[TopUpForm] Validation:", { uidValid, serverValid, uid: uid.trim(), serverId: serverId.trim() });
-
     if (!uidValid || !serverValid) {
       setNicknameStatus("idle");
       setNickname(null);
@@ -149,7 +142,6 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
     }
 
     debounceRef.current = setTimeout(async () => {
-      console.log("[TopUpForm] Calling API /api/games/check-id...");
       setNicknameStatus("checking");
       setNeedsRefresh(false);
       setNickname(null);
@@ -171,8 +163,6 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
         const data = await res.json();
         if (controller.signal.aborted) return;
 
-        console.log("[TopUpForm] API response:", data);
-
         if (data.success && data.name) {
           setNickname(data.name);
           setNicknameStatus("verified");
@@ -180,7 +170,6 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
           setNicknameStatus("not_found");
         }
       } catch (err) {
-        console.error("[TopUpForm] API error:", err);
         if (!controller.signal.aborted) {
           setNicknameStatus("not_found");
         }
@@ -479,15 +468,7 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
                   </div>
                 )}
 
-                {/* Debug info - remove after fixing */}
-                {process.env.NODE_ENV === "development" && (
-                  <div className="mt-2 p-2 rounded bg-gray-800 text-xs text-gray-300 font-mono">
-                    <div>supportsLookup: {supportsLookup ? "true" : "false"}</div>
-                    <div>game.slug: {game.slug}</div>
-                    <div>nicknameStatus: {nicknameStatus}</div>
-                    <div>uidValid: {isValidUid(uid) ? "true" : "false"}</div>
-                  </div>
-                )}
+
             </div>
           </div>
 
