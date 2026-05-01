@@ -51,8 +51,15 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.json",
   icons: {
-    icon: "/favicon.svg",
-    apple: "/favicon.svg",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180" },
+      { url: "/icon-512x512.png", sizes: "512x512" },
+    ],
   },
   appleWebApp: {
     capable: true,
@@ -72,8 +79,14 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const settings = await prisma.settings.findUnique({ where: { id: 1 } }).catch(() => null);
-  const exchangeRate = settings?.exchangeRate ?? 4100;
+  let exchangeRate = 4100;
+  try {
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } });
+    exchangeRate = settings?.exchangeRate ?? 4100;
+  } catch (error) {
+    console.warn('Could not fetch settings, using default exchange rate');
+  }
+  
   const session = await getServerSession(authOptions);
 
   return (

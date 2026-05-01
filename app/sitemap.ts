@@ -4,17 +4,6 @@ import { prisma } from "@/lib/prisma";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
   
-  const [games, pages] = await Promise.all([
-    prisma.game.findMany({
-      where: { active: true },
-      select: { slug: true, updatedAt: true }
-    }),
-    prisma.blogPost.findMany({
-      where: { published: true },
-      select: { slug: true, publishedAt: true, updatedAt: true }
-    }),
-  ]);
-
   const staticPages = [
     { url: baseUrl, lastModified: new Date() },
     { url: `${baseUrl}/login`, lastModified: new Date() },
@@ -30,15 +19,31 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${baseUrl}/reseller`, lastModified: new Date() },
   ];
 
-  const gamePages = games.map(game => ({
-    url: `${baseUrl}/games/${game.slug}`,
-    lastModified: game.updatedAt,
-  }));
+  try {
+    const [games, pages] = await Promise.all([
+      prisma.game.findMany({
+        where: { active: true },
+        select: { slug: true, updatedAt: true }
+      }),
+      prisma.blogPost.findMany({
+        where: { published: true },
+        select: { slug: true, publishedAt: true, updatedAt: true }
+      }),
+    ]);
 
-  const blogPages = pages.map(page => ({
-    url: `${baseUrl}/blog/${page.slug}`,
-    lastModified: page.publishedAt || page.updatedAt,
-  }));
+    const gamePages = games.map(game => ({
+      url: `${baseUrl}/games/${game.slug}`,
+      lastModified: game.updatedAt,
+    }));
 
-  return [...staticPages, ...gamePages, ...blogPages];
+    const blogPages = pages.map(page => ({
+      url: `${baseUrl}/blog/${page.slug}`,
+      lastModified: page.publishedAt || page.updatedAt,
+    }));
+
+    return [...staticPages, ...gamePages, ...blogPages];
+  } catch (error) {
+    console.warn('Sitemap: Could not fetch dynamic pages, returning static only');
+    return staticPages;
+  }
 }

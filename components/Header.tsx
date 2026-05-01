@@ -44,8 +44,12 @@ export default function Header() {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-3 group">
           <div className="relative h-11 w-11 flex items-center justify-center rounded-2xl bg-gradient-to-br from-royal-primary via-royal-accent to-royal-gold p-[1px] transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3 shadow-2xl shadow-royal-primary/20">
-            <div className="h-full w-full rounded-[15px] bg-royal-bg flex items-center justify-center">
-              <span className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-br from-royal-primary to-royal-accent">TK</span>
+            <div className="h-full w-full rounded-[15px] bg-royal-bg flex items-center justify-center overflow-hidden">
+              <img 
+                src="/icon-512x512.png" 
+                alt="Ty Khai TopUp" 
+                className="h-8 w-8 object-contain"
+              />
             </div>
           </div>
           <div className="flex flex-col">
