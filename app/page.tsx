@@ -8,7 +8,7 @@ import HomePopup from "@/components/HomePopup";
 import Link from "next/link";
 import { Search, Sparkles, Trophy, UserPlus, MousePointer2, Gamepad2, Rocket, Swords } from "lucide-react";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export default async function HomePage() {
   const settings = await prisma.settings.findUnique({ where: { id: 1 } }).catch(() => null);
@@ -16,11 +16,28 @@ export default async function HomePage() {
   const games = await prisma.game.findMany({
     where: { active: true },
     orderBy: [{ featured: "desc" }, { sortOrder: "asc" }],
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      publisher: true,
+      currencyName: true,
+      imageUrl: true,
+      featured: true,
+    },
   });
 
   const banners = await prisma.heroBanner.findMany({
     where: { active: true },
     orderBy: { sortOrder: "asc" },
+    select: {
+      id: true,
+      title: true,
+      subtitle: true,
+      imageUrl: true,
+      linkUrl: true,
+      ctaLabel: true,
+    },
   });
 
   return (

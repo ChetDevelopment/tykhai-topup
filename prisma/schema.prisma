@@ -33,6 +33,9 @@ model Game {
   savedUids   SavedUid[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  @@index([active, featured, sortOrder])
+  @@index([active, slug])
 }
 
 model Product {
@@ -332,6 +335,9 @@ model HeroBanner {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+  @@index([active, createdAt])
 }
 
 model Faq {
