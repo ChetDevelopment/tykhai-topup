@@ -59,6 +59,8 @@ model Product {
   sortOrder       Int      @default(0)
   // GameDrop integration
   gameDropOfferId Int?    // Maps to GameDrop offer ID for auto-delivery
+  // G2Bulk integration (for Free Fire SG/MY)
+  g2bulkCatalogueName String? // Maps to G2Bulk catalogue name (e.g., "100", "310")
   orders          Order[]
   reviews         Review[]
   rewards         MysteryBoxReward[]
@@ -313,6 +315,8 @@ model Settings {
   lastAlertSentAt   DateTime?
   gameDropToken     String?
   gameDropPartnerId Int?
+  g2bulkToken       String?
+  g2bulkPartnerId   Int?
 }
 
 model BalanceLog {

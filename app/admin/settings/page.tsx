@@ -9,6 +9,8 @@ export default function AdminSettingsPage() {
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
+  const [testingG2Bulk, setTestingG2Bulk] = useState(false);
+  const [testG2BulkResult, setTestG2BulkResult] = useState<any>(null);
 
   useEffect(() => {
     fetch("/api/admin/settings")
@@ -20,28 +22,29 @@ export default function AdminSettingsPage() {
     e.preventDefault();
     setSaving(true);
     setSaved(false);
-    await fetch("/api/admin/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        siteName: form.siteName,
-        exchangeRate: Number(form.exchangeRate),
-        supportTelegram: form.supportTelegram,
-        supportEmail: form.supportEmail,
-        maintenanceMode: form.maintenanceMode,
-        maintenanceMessage: form.maintenanceMessage || null,
-        announcement: form.announcement || null,
-        announcementTone: form.announcementTone || "info",
-        telegramBotToken: form.telegramBotToken || null,
-        telegramChatId: form.telegramChatId || null,
-        gameDropToken: form.gameDropToken || null,
-        systemMode: form.systemMode || "AUTO",
-        warningThreshold: form.warningThreshold || 20,
-        criticalThreshold: form.criticalThreshold || 5,
-        balanceCheckInterval: form.balanceCheckInterval || 5,
-        alertCooldownMinutes: form.alertCooldownMinutes || 15,
-      }),
-    });
+        await fetch("/api/admin/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            siteName: form.siteName,
+            exchangeRate: Number(form.exchangeRate),
+            supportTelegram: form.supportTelegram,
+            supportEmail: form.supportEmail,
+            maintenanceMode: form.maintenanceMode,
+            maintenanceMessage: form.maintenanceMessage || null,
+            announcement: form.announcement || null,
+            announcementTone: form.announcementTone || "info",
+            telegramBotToken: form.telegramBotToken || null,
+            telegramChatId: form.telegramChatId || null,
+            gameDropToken: form.gameDropToken || null,
+            g2bulkToken: form.g2bulkToken || null,
+            systemMode: form.systemMode || "AUTO",
+            warningThreshold: form.warningThreshold || 20,
+            criticalThreshold: form.criticalThreshold || 5,
+            balanceCheckInterval: form.balanceCheckInterval || 5,
+            alertCooldownMinutes: form.alertCooldownMinutes || 15,
+          }),
+        });
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -58,6 +61,20 @@ export default function AdminSettingsPage() {
       setTestResult({ error: err.message });
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function testG2Bulk() {
+    setTestingG2Bulk(true);
+    setTestG2BulkResult(null);
+    try {
+      const res = await fetch("/api/admin/g2bulk/test", { method: "POST" });
+      const data = await res.json();
+      setTestG2BulkResult(data);
+    } catch (err: any) {
+      setTestG2BulkResult({ error: err.message });
+    } finally {
+      setTestingG2Bulk(false);
     }
   }
 
@@ -199,6 +216,39 @@ export default function AdminSettingsPage() {
               {testResult && (
                 <span className={`text-xs ml-2 ${testResult.success ? "text-green-400" : "text-red-400"}`}>
                   {testResult.success ? `✓ Balance: $${testResult.balance}` : `✗ ${testResult.error}`}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* G2Bulk API Config */}
+        <div className="pt-4 border-t border-royal-border">
+          <h2 className="font-semibold mb-1">G2Bulk API (Free Fire SGMY)</h2>
+          <p className="text-xs text-royal-muted mb-3">Configure G2Bulk API for Free Fire Singapore/Malaysia top-ups.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <label className="label">API Token</label>
+              <input
+                className="input font-mono text-xs"
+                type="text"
+                value={form.g2bulkToken || ""}
+                onChange={(e) => setForm({ ...form, g2bulkToken: e.target.value })}
+                placeholder="Enter G2Bulk API Token"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={testG2Bulk}
+                disabled={testingG2Bulk}
+                className="btn-secondary text-xs"
+              >
+                {testingG2Bulk ? "Testing..." : "Test Connection"}
+              </button>
+              {testG2BulkResult && (
+                <span className={`text-xs ml-2 ${testG2BulkResult.success ? "text-green-400" : "text-red-400"}`}>
+                  {testG2BulkResult.success ? `✓ Balance: $${testG2BulkResult.balance}` : `✗ ${testG2BulkResult.error}`}
                 </span>
               )}
             </div>

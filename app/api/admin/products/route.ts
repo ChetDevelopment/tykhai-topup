@@ -17,6 +17,8 @@ const productSchema = z.object({
   imageUrl: z.string().optional().nullable(),
   active: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
+  gameDropOfferId: z.number().int().optional().nullable(),
+  g2bulkCatalogueName: z.string().optional().nullable(),
 });
 
 export async function GET(req: NextRequest) {

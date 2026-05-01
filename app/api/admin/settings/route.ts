@@ -23,6 +23,7 @@ const settingsSchema = z.object({
   telegramChatId: z.string().nullable().optional(),
   // New fields for balance monitoring - plain text (no encryption needed)
   gameDropToken: z.string().nullable().optional(),
+  g2bulkToken: z.string().nullable().optional(),
   systemMode: z.enum(["AUTO", "FORCE_OPEN", "FORCE_CLOSE"]).optional(),
   warningThreshold: z.number().positive().optional(),
   criticalThreshold: z.number().positive().optional(),
@@ -34,6 +35,7 @@ function serializeSettings<T extends {
   telegramBotToken?: string | null;
   telegramChatId?: string | null;
   gameDropToken?: string | null;
+  g2bulkToken?: string | null;
 }>(settings: T) {
   // For gameDropToken, handle both encrypted and plain text (migration)
   let gameDropToken = settings.gameDropToken;
@@ -51,6 +53,7 @@ function serializeSettings<T extends {
     telegramBotToken: decryptField(settings.telegramBotToken),
     telegramChatId: decryptField(settings.telegramChatId),
     gameDropToken,
+    g2bulkToken: settings.g2bulkToken || null,
   };
 }
 
@@ -86,7 +89,10 @@ export async function PATCH(req: NextRequest) {
       ? { telegramChatId: encryptField(parsed.data.telegramChatId) }
       : {}),
     ...("gameDropToken" in parsed.data
-      ? { gameDropToken: encryptField(parsed.data.gameDropToken) }
+      ? { gameDropToken: parsed.data.gameDropToken } // Store as plain text
+      : {}),
+    ...("g2bulkToken" in parsed.data
+      ? { g2bulkToken: parsed.data.g2bulkToken } // Store as plain text
       : {}),
   };
 

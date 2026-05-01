@@ -91,18 +91,19 @@ export default function AdminProductsPage() {
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-royal-surface text-royal-muted text-xs uppercase tracking-wider">
-              <tr>
-                <th className="text-left px-5 py-3">Game</th>
-                <th className="text-left px-5 py-3">Name</th>
-                <th className="text-right px-5 py-3">Amount</th>
-                <th className="text-right px-5 py-3">Bonus</th>
-                <th className="text-right px-5 py-3">Price USD</th>
-                <th className="text-left px-5 py-3">Badge</th>
-                <th className="text-center px-5 py-3">Active</th>
-                <th className="text-right px-5 py-3">Actions</th>
-              </tr>
-            </thead>
+              <thead className="bg-royal-surface text-royal-muted text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="text-left px-5 py-3">Game</th>
+                  <th className="text-left px-5 py-3">Name</th>
+                  <th className="text-right px-5 py-3">Amount</th>
+                  <th className="text-right px-5 py-3">Bonus</th>
+                  <th className="text-right px-5 py-3">Price USD</th>
+                  <th className="text-left px-5 py-3">Badge</th>
+                  <th className="text-left px-5 py-3">G2Bulk</th>
+                  <th className="text-center px-5 py-3">Active</th>
+                  <th className="text-right px-5 py-3">Actions</th>
+                </tr>
+              </thead>
             <tbody className="divide-y divide-royal-border">
               {loading ? (
                 <tr><td colSpan={8} className="px-5 py-12 text-center text-royal-muted">Loading...</td></tr>
@@ -132,6 +133,7 @@ export default function AdminProductsPage() {
                     <td className="px-5 py-3 text-right font-mono text-royal-accent">{p.bonus > 0 ? `+${p.bonus}` : "—"}</td>
                     <td className="px-5 py-3 text-right font-mono text-royal-primary">${p.priceUsd.toFixed(2)}</td>
                     <td className="px-5 py-3 text-xs">{p.badge || "—"}</td>
+                    <td className="px-5 py-3 text-xs font-mono">{p.g2bulkCatalogueName || "—"}</td>
                     <td className="px-5 py-3 text-center">
                       <button onClick={() => toggleActive(p)}>
                         <span className={`inline-block h-5 w-9 rounded-full relative transition-colors ${p.active ? "bg-green-500" : "bg-royal-border"}`}>
@@ -174,6 +176,8 @@ function ProductForm({ games, defaultGameId, initial, onCancel, onSaved }: any) 
     imageUrl: initial?.imageUrl || "",
     active: initial?.active ?? true,
     sortOrder: initial?.sortOrder ?? 0,
+    gameDropOfferId: initial?.gameDropOfferId ?? "",
+    g2bulkCatalogueName: initial?.g2bulkCatalogueName || "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -192,6 +196,8 @@ function ProductForm({ games, defaultGameId, initial, onCancel, onSaved }: any) 
       sortOrder: Number(form.sortOrder),
       badge: form.badge || null,
       imageUrl: form.imageUrl || null,
+      gameDropOfferId: form.gameDropOfferId ? Number(form.gameDropOfferId) : null,
+      g2bulkCatalogueName: form.g2bulkCatalogueName || null,
     };
     const url = initial ? `/api/admin/products/${initial.id}` : "/api/admin/products";
     const method = initial ? "PATCH" : "POST";
@@ -287,6 +293,32 @@ function ProductForm({ games, defaultGameId, initial, onCancel, onSaved }: any) 
                 value={form.saleEndsAt} 
                 onChange={(e) => setForm({ ...form, saleEndsAt: e.target.value })} 
               />
+            </div>
+          </div>
+        </div>
+
+        <div className="md:col-span-3 pt-4 border-t border-royal-border">
+          <h4 className="text-sm font-bold text-royal-accent mb-3 uppercase tracking-widest">🔌 Provider Integration</h4>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">GameDrop Offer ID</label>
+              <input 
+                className="input font-mono text-xs" 
+                type="number" 
+                value={form.gameDropOfferId} 
+                onChange={(e) => setForm({ ...form, gameDropOfferId: e.target.value })} 
+                placeholder="e.g. 2003"
+              />
+            </div>
+            <div>
+              <label className="label">G2Bulk Catalogue Name (Free Fire SGMY)</label>
+              <input 
+                className="input font-mono text-xs" 
+                value={form.g2bulkCatalogueName} 
+                onChange={(e) => setForm({ ...form, g2bulkCatalogueName: e.target.value })} 
+                placeholder="e.g. 100, 310, 520"
+              />
+              <p className="text-xs text-royal-muted mt-1">Get from GET /games/freefire_sgmy/catalogue</p>
             </div>
           </div>
         </div>

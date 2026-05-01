@@ -515,64 +515,33 @@ async function deliverOrder(order: {
       return { success: true, durationMs: 0 };
     }
 
-    // Get settings for GameDrop token
+    // Get settings
     const settings = await prisma.settings.findUnique({ where: { id: 1 } });
-    if (!settings?.gameDropToken) {
-      throw new Error("GameDrop token not configured");
+    if (!settings) {
+      throw new Error("Settings not configured");
     }
 
-     // Get product's GameDrop offer ID from database
+    // Get product with both provider offer IDs
     const product = await prisma.product.findUnique({
       where: { id: order.product.id },
-      select: { id: true, name: true, gameDropOfferId: true },
+      select: { id: true, name: true, gameDropOfferId: true, g2bulkCatalogueName: true },
     });
 
-    if (!product?.gameDropOfferId) {
-      throw new Error(`No GameDrop offer ID configured for product: ${order.product.name}`);
+    if (!product) {
+      throw new Error(`Product not found: ${order.product.name}`);
     }
 
-    const offerId = product.gameDropOfferId;
-
-    // Import GameDrop functions
-    const { createGameDropOrder, validatePlayerId } = await import("./gamedrop");
-
-    // Validate player ID with GameDrop first (optional but recommended)
-    console.log(`[delivery] Validating player ID: ${order.playerUid}`);
-    const validation = await validatePlayerId(
-      settings.gameDropToken,
-      offerId,
-      order.playerUid,
-      order.serverId || undefined
-    );
-
-    if (!validation.valid) {
-      throw new Error(`Player ID validation failed: ${validation.message}`);
+    // Determine which provider to use
+    // Priority: G2Bulk if configured, otherwise GameDrop
+    if (product.g2bulkCatalogueName && settings.g2bulkToken) {
+      // Use G2Bulk provider
+      return await deliverWithG2Bulk(settings.g2bulkToken, product.g2bulkCatalogueName, order, startTime);
+    } else if (product.gameDropOfferId && settings.gameDropToken) {
+      // Use GameDrop provider (existing logic)
+      return await deliverWithGameDrop(settings.gameDropToken, product.gameDropOfferId, order, startTime);
+    } else {
+      throw new Error(`No delivery provider configured for product: ${order.product.name}`);
     }
-
-    console.log(`[delivery] Creating GameDrop order for ${order.orderNumber}`);
-    
-    // This is how GameDrop gets the player UID and delivers to their account
-    const result = await createGameDropOrder(
-      settings.gameDropToken,
-      offerId,
-      order.playerUid,  // ← GameDrop uses this as "gameUserId"
-      order.serverId || undefined,
-      order.orderNumber, // ← Idempotency key (prevents duplicate delivery)
-      undefined // customerEmail (optional)
-    );
-
-    if (result.status !== "COMPLETED" && result.status !== "PENDING") {
-      throw new Error(`GameDrop delivery failed: ${result.message}`);
-    }
-
-    const durationMs = Date.now() - startTime;
-
-    console.log(`[delivery] Order ${order.orderNumber} delivered successfully`, {
-      status: result.status,
-      transactionId: result.transactionId,
-    });
-
-    return { success: true, durationMs };
   } catch (err) {
     // Log error but don't throw - let retry logic handle it
     console.error(`[delivery] Order ${order.orderNumber} failed:`, err);
@@ -581,6 +550,111 @@ async function deliverOrder(order: {
       error: err instanceof Error ? err.message : "Unknown delivery error",
     };
   }
+}
+
+// ===================== G2Bulk Delivery =====================
+async function deliverWithG2Bulk(
+  token: string,
+  catalogueName: string,
+  order: { id: string; orderNumber: string; playerUid: string; serverId?: string | null },
+  startTime: number
+): Promise<{ success: boolean; error?: string; durationMs?: number }> {
+  const { validateG2BulkPlayerId, createG2BulkOrder, checkG2BulkOrderStatus } = await import("./g2bulk");
+
+  // Validate player ID with G2Bulk
+  console.log(`[g2bulk] Validating player ID: ${order.playerUid}`);
+  const validation = await validateG2BulkPlayerId(
+    token,
+    order.playerUid,
+    order.serverId || undefined
+  );
+
+  if (!validation.valid) {
+    throw new Error(`Player ID validation failed: ${validation.message}`);
+  }
+
+  console.log(`[g2bulk] Creating G2Bulk order for ${order.orderNumber}`);
+
+  const result = await createG2BulkOrder(
+    token,
+    catalogueName,
+    order.playerUid,
+    order.serverId || undefined,
+    order.orderNumber // Idempotency key
+  );
+
+  if (!result.success) {
+    throw new Error(`G2Bulk delivery failed: ${result.message}`);
+  }
+
+  // Wait and check order status
+  let attempts = 0;
+  const maxAttempts = 10;
+  while (attempts < maxAttempts && result.orderId) {
+    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+    const statusCheck = await checkG2BulkOrderStatus(token, result.orderId);
+    
+    if (statusCheck.success) {
+      if (statusCheck.status === "COMPLETED") {
+        console.log(`[g2bulk] Order ${order.orderNumber} completed successfully`);
+        return { success: true, durationMs: Date.now() - startTime };
+      } else if (statusCheck.status === "FAILED") {
+        throw new Error(`G2Bulk order failed: ${statusCheck.message}`);
+      }
+    }
+    attempts++;
+  }
+
+  // If we get here, order is still processing - that's OK
+  console.log(`[g2bulk] Order ${order.orderNumber} is processing (${result.status})`);
+  return { success: true, durationMs: Date.now() - startTime };
+}
+
+// ===================== GameDrop Delivery =====================
+async function deliverWithGameDrop(
+  token: string,
+  offerId: number,
+  order: { id: string; orderNumber: string; playerUid: string; serverId?: string | null },
+  startTime: number
+): Promise<{ success: boolean; error?: string; durationMs?: number }> {
+  const { validatePlayerId, createGameDropOrder } = await import("./gamedrop");
+
+  // Validate player ID with GameDrop
+  console.log(`[gamedrop] Validating player ID: ${order.playerUid}`);
+  const validation = await validatePlayerId(
+    token,
+    offerId,
+    order.playerUid,
+    order.serverId || undefined
+  );
+
+  if (!validation.valid) {
+    throw new Error(`Player ID validation failed: ${validation.message}`);
+  }
+
+  console.log(`[gamedrop] Creating GameDrop order for ${order.orderNumber}`);
+
+  const result = await createGameDropOrder(
+    token,
+    offerId,
+    order.playerUid,
+    order.serverId || undefined,
+    order.orderNumber, // Idempotency key
+    undefined // customerEmail
+  );
+
+  if (result.status !== "COMPLETED" && result.status !== "PENDING") {
+    throw new Error(`GameDrop delivery failed: ${result.message}`);
+  }
+
+  const durationMs = Date.now() - startTime;
+
+  console.log(`[gamedrop] Order ${order.orderNumber} delivered successfully`, {
+    status: result.status,
+    transactionId: result.transactionId,
+  });
+
+  return { success: true, durationMs };
 }
 
 // ===================== Logging Helpers =====================
@@ -632,46 +706,89 @@ async function logDeliveryEvent(
 // ===================== Job 5: Balance Check =====================
 async function runBalanceCheck() {
   const settings = await prisma.settings.findUnique({ where: { id: 1 } });
-  if (!settings?.gameDropToken || settings.systemMode === "FORCE_CLOSE") return;
+  if (!settings || settings.systemMode === "FORCE_CLOSE") return;
 
-  try {
-    const data = await checkGameDropBalance(settings.gameDropToken);
-    const available = data.balance - data.draftBalance;
+  // Check G2Bulk balance if configured
+  if (settings.g2bulkToken) {
+    try {
+      const { checkG2BulkBalance } = await import("./g2bulk");
+      const data = await checkG2BulkBalance(settings.g2bulkToken);
+      const available = data.balance - data.draftBalance;
 
-    // Update latest balance
-    await prisma.settings.update({
-      where: { id: 1 },
-      data: {
-        currentBalance: data.balance,
-        lastBalanceCheck: new Date(),
-        gameDropPartnerId: data.partnerId,
-      },
-    });
+      // Update latest balance
+      await prisma.settings.update({
+        where: { id: 1 },
+        data: {
+          currentBalance: data.balance,
+          lastBalanceCheck: new Date(),
+          g2bulkPartnerId: data.partnerId,
+        },
+      });
 
-    // Log to BalanceLog
-    await prisma.balanceLog.create({
-      data: {
-        balance: data.balance,
-        reserved: data.draftBalance,
-        available,
-        source: "API",
-      },
-    });
+      // Log to BalanceLog
+      await prisma.balanceLog.create({
+        data: {
+          balance: data.balance,
+          reserved: data.draftBalance,
+          available,
+          source: "G2BULK",
+        },
+      });
 
-    // AUTO mode actions only
-    if (settings.systemMode === "AUTO") {
-      if (settings.criticalThreshold && available < settings.criticalThreshold) {
-        await pauseSystem("LOW_BALANCE", available);
-      } else if (settings.warningThreshold && available < settings.warningThreshold) {
-        await sendBalanceAlert("WARNING", available, settings.warningThreshold);
-      } else if (settings.systemStatus === "PAUSED" && settings.pauseReason === "LOW_BALANCE") {
-        await resumeSystem("Balance restored above critical threshold");
+      // AUTO mode actions only
+      if (settings.systemMode === "AUTO") {
+        if (settings.criticalThreshold && available < settings.criticalThreshold) {
+          await pauseSystem("LOW_BALANCE", available);
+        } else if (settings.warningThreshold && available < settings.warningThreshold) {
+          await sendBalanceAlert("WARNING", available, settings.warningThreshold);
+        } else if (settings.systemStatus === "PAUSED" && settings.pauseReason === "LOW_BALANCE") {
+          await resumeSystem("Balance restored above critical threshold");
+        }
+      }
+    } catch (err) {
+      console.error("[worker] G2Bulk check failed:", err);
+      if (settings?.systemMode === "AUTO") {
+        await pauseSystem("API_ERROR");
       }
     }
-  } catch (err) {
-    console.error("[worker] GameDrop check failed:", err);
-    if (settings?.systemMode === "AUTO") {
-      await pauseSystem("API_ERROR");
+  } else if (settings.gameDropToken) {
+    // Fallback to GameDrop
+    try {
+      const data = await checkGameDropBalance(settings.gameDropToken);
+      const available = data.balance - data.draftBalance;
+
+      await prisma.settings.update({
+        where: { id: 1 },
+        data: {
+          currentBalance: data.balance,
+          lastBalanceCheck: new Date(),
+          gameDropPartnerId: data.partnerId,
+        },
+      });
+
+      await prisma.balanceLog.create({
+        data: {
+          balance: data.balance,
+          reserved: data.draftBalance,
+          available,
+          source: "GAMEDROP",
+        },
+      });
+
+      if (settings.systemMode === "AUTO") {
+        if (settings.criticalThreshold && available < settings.criticalThreshold) {
+          await pauseSystem("LOW_BALANCE", available);
+        } else if (settings.warningThreshold && available < settings.warningThreshold) {
+          await sendBalanceAlert("WARNING", available, settings.warningThreshold);
+        } else if (settings.systemStatus === "PAUSED" && settings.pauseReason === "LOW_BALANCE") {
+          await resumeSystem("Balance restored above critical threshold");
+        }
+      }
+    } catch (err) {
+      console.error("[worker] GameDrop check failed:", err);
+      if (settings?.systemMode === "AUTO") {
+        await pauseSystem("API_ERROR");
+      }
     }
   }
 }

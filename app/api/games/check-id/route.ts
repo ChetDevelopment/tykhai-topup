@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 import { z } from "zod";
+import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
 // In-game ID → nickname check.
 // Upstream: https://v1.camrapidx.com/validate_user/
+// For Free Fire SGMY with G2Bulk: uses G2Bulk API
 //
 // Route is public (used by the checkout form) but intentionally narrow:
 // we only forward a fixed set of game slugs and strip out anything else.
@@ -25,7 +27,7 @@ function sanitizeServerId(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-// Maps our game slugs → isan endpoint path + whether a server param is needed.
+// Maps our game slugs → camrapidx endpoint path + whether a server param is needed.
 // IMPORTANT: Verify these endpoint names with camrapidx.com documentation
 // Note: honkai-star-rail is NOT supported by camrapidx.com
 const CAMRAPIDX_GAMES: Record<
@@ -83,6 +85,64 @@ export async function POST(req: NextRequest) {
         { success: false, error: "Invalid UID format (4-64 characters, letters/digits only)" },
         { status: 400 }
       );
+    }
+  }
+
+  // Check if G2Bulk should be used for Free Fire
+  if (slug === "free-fire") {
+    const settings = await prisma.settings.findUnique({ where: { id: 1 } });
+    
+    // If G2Bulk token is configured, use G2Bulk API for validation
+    if (settings?.g2bulkToken) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        
+        const res = await fetch("https://api.g2bulk.com/v1/games/checkPlayerId", {
+          method: "POST",
+          headers: {
+            "X-API-Key": settings.g2bulkToken,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            game: "freefire_sgmy",
+            user_id: uid,
+            server_id: serverId,
+          }),
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        clearTimeout(timeout);
+
+        if (!res.ok) {
+          return NextResponse.json(
+            { success: false, error: "G2Bulk validation failed" },
+            { status: 502 }
+          );
+        }
+
+        const data = await res.json();
+        
+        if (data.valid !== "valid") {
+          return NextResponse.json(
+            { success: false, error: "Player not found — check your ID." },
+            { status: 404 }
+          );
+        }
+
+        return NextResponse.json({
+          success: true,
+          name: data.name || "Player",
+          uid: uid,
+          serverId: serverId ?? null,
+        });
+      } catch (err) {
+        const aborted = err instanceof Error && err.name === "AbortError";
+        return NextResponse.json(
+          { success: false, error: aborted ? "Lookup timed out" : "Network error" },
+          { status: 504 }
+        );
+      }
     }
   }
 

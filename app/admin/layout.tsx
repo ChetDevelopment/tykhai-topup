@@ -1,24 +1,25 @@
 import Link from "next/link";
 import { getCurrentAdmin } from "@/lib/auth";
-import { 
-  LayoutDashboard, 
+import {
+  LayoutDashboard,
   BarChart3,
   TrendingUp,
-  ShoppingBag, 
-  Gamepad2, 
-  Gem, 
-  Ticket, 
-  Image as ImageIcon, 
-  HelpCircle, 
-  FileText, 
-  Users, 
-  Ban, 
-  History, 
+  ShoppingBag,
+  Gamepad2,
+  Gem,
+  Ticket,
+  Image as ImageIcon,
+  HelpCircle,
+  FileText,
+  Users,
+  Ban,
+  History,
   Settings,
   ShieldCheck,
   Package,
   Store,
-  Megaphone
+  Megaphone,
+  RefreshCw
 } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 
@@ -40,6 +41,7 @@ export default async function AdminLayout({
     { href: "/admin/games", label: "Games", icon: Gamepad2 },
     { href: "/admin/products", label: "Products", icon: Gem },
     { href: "/admin/tools/pricing", label: "Pricing Tool", icon: TrendingUp },
+    { href: "/admin/price-sync", label: "Price Sync", icon: RefreshCw },
     { href: "/admin/promo-codes", label: "Promo Codes", icon: Ticket },
     { href: "/admin/banners", label: "Banners", icon: ImageIcon },
     { href: "/admin/popup", label: "Popup", icon: Megaphone },

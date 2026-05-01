@@ -85,14 +85,39 @@ async function main() {
       featured: true,
       sortOrder: 2,
       products: [
-        { name: "100 Diamonds", amount: 100, priceUsd: 0.99 },
-        { name: "210 Diamonds", amount: 210, priceUsd: 1.98 },
-        { name: "530 Diamonds", amount: 530, priceUsd: 4.95, badge: "Hot" },
-        { name: "1080 Diamonds", amount: 1080, priceUsd: 9.90 },
-        { name: "2200 Diamonds", amount: 2200, priceUsd: 19.80, badge: "Best Value" },
-        { name: "5600 Diamonds", amount: 5600, priceUsd: 49.50 },
-        { name: "Weekly Membership", amount: 0, priceUsd: 1.50, badge: "Pass" },
-        { name: "Monthly Membership", amount: 0, priceUsd: 7.90, badge: "Pass" },
+        // Diamond Packages (from G2Bulk)
+        { name: "25 Diamonds", amount: 25, priceUsd: 0.26, g2bulkCatalogueName: "25" },
+        { name: "100 Diamonds", amount: 100, priceUsd: 1.00, g2bulkCatalogueName: "100", badge: "Popular" },
+        { name: "310 Diamonds", amount: 310, priceUsd: 3.07, g2bulkCatalogueName: "310", badge: "Hot" },
+        { name: "520 Diamonds", amount: 520, priceUsd: 5.14, g2bulkCatalogueName: "520" },
+        { name: "1060 Diamonds", amount: 1060, priceUsd: 10.13, g2bulkCatalogueName: "1060", badge: "Best Value" },
+        { name: "2180 Diamonds", amount: 2180, priceUsd: 20.45, g2bulkCatalogueName: "2180" },
+        { name: "5600 Diamonds", amount: 5600, priceUsd: 50.63, g2bulkCatalogueName: "5600" },
+        { name: "11500 Diamonds", amount: 11500, priceUsd: 104.28, g2bulkCatalogueName: "11500" },
+        
+        // Weekly & Monthly Passes
+        { name: "Weekly Membership", amount: 0, priceUsd: 1.74, g2bulkCatalogueName: "Weekly", badge: "Pass" },
+        { name: "Monthly Membership", amount: 0, priceUsd: 8.70, g2bulkCatalogueName: "Monthly", badge: "Pass" },
+        
+        // Special Airdrops
+        { name: "Special Airdrop", amount: 0, priceUsd: 1.21, g2bulkCatalogueName: "Special Airdrop" },
+        { name: "Special Airdrop 2", amount: 0, priceUsd: 2.63, g2bulkCatalogueName: "Special Airdrop 2" },
+        
+        // Level Up Packages
+        { name: "Level Up Package - Level 6", amount: 0, priceUsd: 0.33, g2bulkCatalogueName: "Level Up Package - Level 6" },
+        { name: "Level Up Package - Level 10", amount: 0, priceUsd: 0.70, g2bulkCatalogueName: "Level Up Package - Level 10" },
+        { name: "Level Up Package - Level 15", amount: 0, priceUsd: 0.70, g2bulkCatalogueName: "Level Up Package - Level 15" },
+        { name: "Level Up Package - Level 20", amount: 0, priceUsd: 0.70, g2bulkCatalogueName: "Level Up Package - Level 20" },
+        { name: "Level Up Package - Level 25", amount: 0, priceUsd: 0.70, g2bulkCatalogueName: "Level Up Package - Level 25" },
+        { name: "Level Up Package - Level 30", amount: 0, priceUsd: 1.00, g2bulkCatalogueName: "Level Up Package - Level 30" },
+        
+        // Evo Access
+        { name: "Evo Access 3D", amount: 0, priceUsd: 0.60, g2bulkCatalogueName: "Evo Access 3D" },
+        { name: "Evo Access 7D", amount: 0, priceUsd: 0.92, g2bulkCatalogueName: "Evo Access 7D" },
+        { name: "Evo Access 30D", amount: 0, priceUsd: 2.73, g2bulkCatalogueName: "Evo Access 30D" },
+        
+        // Weekly Lite
+        { name: "Weekly Lite", amount: 0, priceUsd: 0.37, g2bulkCatalogueName: "WeeklyLite" },
       ],
     },
     {
