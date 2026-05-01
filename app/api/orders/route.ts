@@ -445,6 +445,7 @@ export async function POST(req: NextRequest) {
         paymentUrl: init.redirectUrl,
         qrString: init.qrString ?? null,
         paymentExpiresAt: init.expiresAt,
+        metadata: init.md5String ? { bakongMd5: init.md5String } : undefined,
       },
     });
 

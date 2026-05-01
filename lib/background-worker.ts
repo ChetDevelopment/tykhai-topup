@@ -521,23 +521,17 @@ async function deliverOrder(order: {
       throw new Error("GameDrop token not configured");
     }
 
-    // Get product's GameDrop offer ID (you need to store this in Product model)
+     // Get product's GameDrop offer ID from database
     const product = await prisma.product.findUnique({
       where: { id: order.product.id },
-      select: { id: true, name: true },
+      select: { id: true, name: true, gameDropOfferId: true },
     });
 
-    // TODO: You need to add `gameDropOfferId` field to Product model
-    // For now, using a mapping (you should store this in DB)
-    const offerIdMap: Record<string, number> = {
-      // Map your product IDs to GameDrop offer IDs
-      // "product-uuid-here": 1001, // example
-    };
-
-    const offerId = offerIdMap[order.product.id];
-    if (!offerId) {
-      throw new Error(`No GameDrop offer ID mapped for product: ${order.product.name}`);
+    if (!product?.gameDropOfferId) {
+      throw new Error(`No GameDrop offer ID configured for product: ${order.product.name}`);
     }
+
+    const offerId = product.gameDropOfferId;
 
     // Import GameDrop functions
     const { createGameDropOrder, validatePlayerId } = await import("./gamedrop");
@@ -577,34 +571,6 @@ async function deliverOrder(order: {
       status: result.status,
       transactionId: result.transactionId,
     });
-
-    return { success: true, durationMs };
-  } catch (err) {
-    // Log error but don't throw - let retry logic handle it
-    console.error(`[delivery] Order ${order.orderNumber} failed:`, err);
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Unknown delivery error",
-    };
-  }
-}
-
-    // TODO: Replace with actual game top-up API
-    // CRITICAL: This must be idempotent - safe to retry
-    // Example:
-    // const result = await callGameApi({
-    //   gameSlug: order.game.slug,
-    //   playerUid: order.playerUid,
-    //   serverId: order.serverId,
-    //   amount: order.product.amount,
-    //   orderNumber: order.orderNumber,
-    //   idempotencyKey: order.orderNumber, // API should respect this
-    // });
-
-    // Simulate API call (remove in production)
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    const durationMs = Date.now() - startTime;
 
     return { success: true, durationMs };
   } catch (err) {

@@ -10,55 +10,73 @@ export async function GET(req: NextRequest) {
   if ("response" in security) return security.response;
 
   const user = security.user;
-  const [boughtOrders, savedUids, recentOrders, wishlist, userData] = await Promise.all([
-    prisma.order.findMany({
-      where: {
-        userId: user.userId,
-        status: { in: ["PAID", "DELIVERED", "PROCESSING"] },
-      },
-      select: { productId: true },
-    }),
-    prisma.savedUid.findMany({
-      where: { userId: user.userId },
-      include: {
-        game: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            imageUrl: true,
-            requiresServer: true,
-            servers: true,
+  
+  // Use try-catch for each part to be resilient to intermittent DB errors
+  let boughtOrders = [];
+  let savedUids = [];
+  let recentOrders = [];
+  let wishlist = [];
+  let userData = null;
+
+  try {
+    const results = await Promise.allSettled([
+      prisma.order.findMany({
+        where: {
+          userId: user.userId,
+          status: { in: ["PAID", "DELIVERED", "PROCESSING"] },
+        },
+        select: { productId: true },
+      }),
+      prisma.savedUid.findMany({
+        where: { userId: user.userId },
+        include: {
+          game: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              imageUrl: true,
+              requiresServer: true,
+              servers: true,
+            },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.order.findMany({
-      where: {
-        userId: user.userId,
-        status: { in: ["PAID", "DELIVERED", "PROCESSING"] },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      include: {
-        game: { select: { id: true, name: true, slug: true, imageUrl: true } },
-        product: { select: { id: true, name: true, priceUsd: true } },
-      },
-    }),
-    prisma.wishlist.findMany({
-      where: { userId: user.userId },
-      include: {
-        product: { include: { game: { select: { name: true, slug: true } } } },
-      },
-    }),
-    prisma.user.findUnique({
-      where: { id: user.userId },
-      select: { pointsBalance: true, walletBalance: true },
-    }),
-  ]);
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.order.findMany({
+        where: {
+          userId: user.userId,
+          status: { in: ["PAID", "DELIVERED", "PROCESSING"] },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        include: {
+          game: { select: { id: true, name: true, slug: true, imageUrl: true } },
+          product: { select: { id: true, name: true, priceUsd: true } },
+        },
+      }),
+      prisma.wishlist.findMany({
+        where: { userId: user.userId },
+        include: {
+          product: { include: { game: { select: { name: true, slug: true } } } },
+        },
+      }),
+      prisma.user.findUnique({
+        where: { id: user.userId },
+        select: { pointsBalance: true, walletBalance: true },
+      }),
+    ]);
 
-  const boughtProductIds = Array.from(new Set(boughtOrders.map((order) => order.productId)));
+    if (results[0].status === "fulfilled") boughtOrders = results[0].value;
+    if (results[1].status === "fulfilled") savedUids = results[1].value;
+    if (results[2].status === "fulfilled") recentOrders = results[2].value;
+    if (results[3].status === "fulfilled") wishlist = results[3].value;
+    if (results[4].status === "fulfilled") userData = results[4].value;
+  } catch (err) {
+    console.error("Partial data fetch error in /api/user/me:", err);
+  }
+
+  const boughtProductIds = Array.from(new Set(boughtOrders.map((order: any) => order.productId)));
   const quickData = recentOrders.map((order) => ({
     gameSlug: order.game.slug,
     gameName: order.game.name,

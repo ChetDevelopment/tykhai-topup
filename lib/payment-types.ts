@@ -1,12 +1,13 @@
 /**
  * Unified Payment Types for Ty Khai TopUp
  * Defines all payment-related types, states, and interfaces
+ * Restricted to Bakong KHQR only as requested
  */
 
 import { z } from "zod";
 
 // ===================== Payment Method & Currency =====================
-export type PaymentMethod = "BAKONG" | "TRUE_MONEY" | "WING" | "BANK" | "USDT" | "WALLET";
+export type PaymentMethod = "BAKONG" | "WALLET"; // Only Bakong KHQR + Wallet (for internal balance)
 export type PaymentCurrency = "USD" | "KHR";
 
 // ===================== Payment Status State Machine =====================
@@ -61,6 +62,7 @@ export interface PaymentInitResult {
   redirectUrl?: string;
   qrString?: string | null;
   qrStringEnc?: string | null; // Encrypted QR for storage
+  md5String?: string | null; // MD5 hash for Bakong verification
   expiresAt: Date;
   instructions?: string | null;
   deepLink?: string | null; // For mobile app deep linking
@@ -107,30 +109,6 @@ export const PAYMENT_PROVIDERS: Record<PaymentMethod, PaymentProviderConfig> = {
     currencies: ["USD", "KHR"],
     minAmount: 0.50,
   },
-  TRUE_MONEY: {
-    enabled: false, // Set to true when configured
-    displayName: "True Money",
-    currencies: ["USD", "KHR"],
-    minAmount: 1,
-  },
-  WING: {
-    enabled: false,
-    displayName: "Wing Money",
-    currencies: ["USD", "KHR"],
-    minAmount: 1,
-  },
-  BANK: {
-    enabled: false,
-    displayName: "Bank Transfer",
-    currencies: ["USD", "KHR"],
-    minAmount: 5,
-  },
-  USDT: {
-    enabled: false,
-    displayName: "USDT (TRC20)",
-    currencies: ["USD"],
-    minAmount: 5,
-  },
   WALLET: {
     enabled: true,
     displayName: "Ty Khai Wallet",
@@ -147,7 +125,7 @@ export const CreateOrderSchema = z.object({
   serverId: z.string().optional(),
   customerEmail: z.string().email().optional(),
   customerPhone: z.string().optional(),
-  paymentMethod: z.enum(["WALLET", "BAKONG", "TRUE_MONEY", "WING", "BANK", "USDT"]),
+  paymentMethod: z.enum(["WALLET", "BAKONG"]), // Only Bakong + Wallet
   currency: z.enum(["USD", "KHR"]).optional().default("USD"),
   promoCode: z.string().optional(),
   playerNickname: z.string().max(100).optional(),

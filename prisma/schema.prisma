@@ -39,31 +39,33 @@ model Game {
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  gameId      String
-  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  name        String
-  amount      Int
-  bonus       Int      @default(0)
-  priceUsd    Float
+  id              String   @id @default(cuid())
+  gameId          String
+  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  name            String
+  amount          Int
+  bonus           Int      @default(0)
+  priceUsd        Float
   resellerPriceUsd Float?
   officialPriceUsd Float?
-  priceKhr    Float?
-  salePriceUsd Float?
-  saleEndsAt   DateTime?
-  isMysteryBox  Boolean  @default(false)
+  priceKhr        Float?
+  salePriceUsd     Float?
+  saleEndsAt       DateTime?
+  isMysteryBox    Boolean  @default(false)
   isSubscriptionAvailable Boolean @default(false)
-  badge       String?
-  imageUrl    String?
-  active      Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  orders      Order[]
-  reviews     Review[]
-  rewards     MysteryBoxReward[]
-  wishlists   Wishlist[]
-  priceAlerts PriceAlert[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  badge           String?
+  imageUrl        String?
+  active          Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  // GameDrop integration
+  gameDropOfferId Int?    // Maps to GameDrop offer ID for auto-delivery
+  orders          Order[]
+  reviews         Review[]
+  rewards         MysteryBoxReward[]
+  wishlists       Wishlist[]
+  priceAlerts     PriceAlert[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([gameId, active])
   @@unique([gameId, name])
@@ -130,6 +132,7 @@ model Order {
   refunds            Refund[]       @relation("OrderRefunds")
   walletReservations WalletReservation[] @relation("OrderWalletReservations")
   fraudFlags2       FraudFlag[]    @relation("OrderFraudFlags")
+  metadata           Json         @default("{}")
 
   @@index([status])
   @@index([createdAt])
@@ -149,7 +152,7 @@ model PaymentLog {
   responseCode      String?
   responseMessage   String?
   rawResponse       String?
-  metadata         String   @default("{}")
+  metadata         Json   @default("{}")
   createdAt         DateTime @default(now())
 
   @@index([orderId])
@@ -239,7 +242,7 @@ model FraudFlag {
   type            String
   severity        String   @default("MEDIUM")
   description     String?
-  metadata        String?
+  metadata        Json?
   isResolved      Boolean  @default(false)
   resolvedById    String?
   resolvedBy      User?    @relation("FraudResolver", fields: [resolvedById], references: [id])
