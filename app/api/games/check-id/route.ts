@@ -14,7 +14,8 @@ export const runtime = "nodejs";
 const schema = z.object({
   slug: z.enum(["mobile-legends", "genshin-impact", "honkai-star-rail", "free-fire"]),
   uid: z.string().min(4, "UID must be at least 4 characters").max(64, "UID too long"),
-  serverId: z.string().min(1).max(6).optional(),
+  // Allow longer serverIds (some games have descriptive names like "SG(Khmer)")
+  serverId: z.string().max(32).optional(),
 });
 
 // Safe parsing: accept both serverId as string or undefined
@@ -25,13 +26,14 @@ function sanitizeServerId(value: unknown): string | undefined {
 }
 
 // Maps our game slugs → isan endpoint path + whether a server param is needed.
+// IMPORTANT: Verify these endpoint names with camrapidx.com documentation
+// Note: honkai-star-rail is NOT supported by camrapidx.com
 const CAMRAPIDX_GAMES: Record<
   z.infer<typeof schema>["slug"],
   { file: string; needsZone: boolean }
 > = {
   "mobile-legends":    { file: "Mobile_Legends_KH", needsZone: true },
   "genshin-impact":    { file: "Genshin_Impact",    needsZone: false },
-  "honkai-star-rail":  { file: "Honkai_Star_Rail",  needsZone: false },
   "free-fire":         { file: "FreeFire_Global",    needsZone: false },
 };
 
@@ -71,8 +73,16 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+  } else if (slug === "free-fire") {
+    // Free Fire UIDs can be hexadecimal, up to 32 chars
+    if (!/^[a-fA-F0-9]{4,32}$/.test(uid.trim())) {
+      return NextResponse.json(
+        { success: false, error: "Free Fire UID must be 4-32 hex characters" },
+        { status: 400 }
+      );
+    }
   } else {
-    // General validation for other games (already done by schema)
+    // General validation for other games (Genshin, HSR)
     if (!/^[a-zA-Z0-9-_]{4,64}$/.test(uid.trim())) {
       return NextResponse.json(
         { success: false, error: "Invalid UID format (4-64 characters, letters/digits only)" },
@@ -95,6 +105,8 @@ export async function POST(req: NextRequest) {
   if (cfg.needsZone && serverId) {
     upstreamUrl += `&ZoneID=${encodeURIComponent(serverId)}`;
   }
+
+  console.log("[check-id] Calling upstream:", upstreamUrl);
 
   try {
     const controller = new AbortController();
@@ -131,12 +143,14 @@ export async function POST(req: NextRequest) {
       const msg = d.message && d.message !== "Successfully Verified" 
         ? d.message 
         : "Player not found — check your ID and zone.";
+      console.error("[check-id] Player not found:", { uid, serverId, slug, response: d });
       return NextResponse.json(
         { success: false, error: msg },
         { status: 404 }
       );
     }
 
+    console.log("[check-id] Success:", { uid, username: d.username });
     return NextResponse.json({
       success: true,
       name: d.username,

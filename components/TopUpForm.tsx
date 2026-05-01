@@ -9,7 +9,8 @@ import Countdown from "./Countdown";
 import SquadPoolUI from "./SquadPoolUI";
 
   // Games that support automatic nickname lookup via /api/games/check-id
-const LOOKUP_SLUGS = new Set(["mobile-legends", "free-fire", "genshin-impact", "honkai-star-rail"]);
+// Note: honkai-star-rail is NOT supported by camrapidx.com
+const LOOKUP_SLUGS = new Set(["mobile-legends", "free-fire", "genshin-impact"]);
 // MLBB & similar games that use a separate "Zone ID" instead of a server dropdown
 const ZONE_ID_SLUGS = new Set(["mobile-legends"]);
 
@@ -40,6 +41,7 @@ interface Game {
 }
 
 export default function TopUpForm({ game, products }: { game: Game; products: Product[] }) {
+  console.log("[TopUpForm] Render:", { slug: game.slug, name: game.name, supportsLookup: LOOKUP_SLUGS.has(game.slug) });
   const { format, currency, toKhr } = useCurrency();
   const [user, setUser] = useState<any>(null);
   const [boughtProductIds, setBoughtProductIds] = useState<string[]>([]);
@@ -120,17 +122,25 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
   const [needsRefresh, setNeedsRefresh] = useState(false);
 
   useEffect(() => {
+    console.log("[TopUpForm] UID/Server changed:", { uid, serverId, supportsLookup, useZoneField });
     setNeedsRefresh(true);
   }, [uid, serverId]);
 
   useEffect(() => {
-    if (!supportsLookup || !needsRefresh) return;
+    console.log("[TopUpForm] Lookup effect triggered:", { supportsLookup, needsRefresh, gameSlug: game.slug });
+
+    if (!supportsLookup || !needsRefresh) {
+      console.log("[TopUpForm] Lookup skipped:", { supportsLookup, needsRefresh });
+      return;
+    }
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (abortRef.current) abortRef.current.abort();
 
     const uidValid = isValidUid(uid);
     const serverValid = !useZoneField || serverId.trim().length > 0;
+
+    console.log("[TopUpForm] Validation:", { uidValid, serverValid, uid: uid.trim(), serverId: serverId.trim() });
 
     if (!uidValid || !serverValid) {
       setNicknameStatus("idle");
@@ -139,6 +149,7 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
     }
 
     debounceRef.current = setTimeout(async () => {
+      console.log("[TopUpForm] Calling API /api/games/check-id...");
       setNicknameStatus("checking");
       setNeedsRefresh(false);
       setNickname(null);
@@ -160,13 +171,16 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
         const data = await res.json();
         if (controller.signal.aborted) return;
 
+        console.log("[TopUpForm] API response:", data);
+
         if (data.success && data.name) {
           setNickname(data.name);
           setNicknameStatus("verified");
         } else {
           setNicknameStatus("not_found");
         }
-      } catch {
+      } catch (err) {
+        console.error("[TopUpForm] API error:", err);
         if (!controller.signal.aborted) {
           setNicknameStatus("not_found");
         }
@@ -396,7 +410,7 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
                     required
                   />
                   {uid && !isValidUid(uid) && (
-                    <p className="text-xs text-red-400 mt-1">UID should be 6–20 digits.</p>
+                    <p className="text-xs text-red-400 mt-1">UID should be 4–64 characters (letters, numbers, dash, underscore).</p>
                   )}
                 </div>
                 {useZoneField && (
@@ -426,44 +440,54 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
                 </div>
               )}
 
-              {supportsLookup && nicknameStatus !== "idle" && (
-                <div className="pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                  {nicknameStatus === "checking" && (
-                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-royal-primary/5 border border-royal-primary/20">
-                      <Loader2 className="h-4 w-4 text-royal-primary animate-spin" strokeWidth={3} />
-                      <span className="text-sm font-bold text-royal-primary tracking-wide uppercase italic">
-                        Synchronizing with {game.name} Servers...
-                      </span>
-                    </div>
-                  )}
-                  {nicknameStatus === "verified" && nickname && (
-                    <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-green-500/10 border border-green-500/30 shadow-[0_0_15px_-5px_rgba(34,197,94,0.3)]">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-green-500/20 flex items-center justify-center">
-                          <UserRoundCheck className="h-5 w-5 text-green-400" />
+                {supportsLookup && nicknameStatus !== "idle" && (
+                  <div className="pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    {nicknameStatus === "checking" && (
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-royal-primary/5 border border-royal-primary/20">
+                        <Loader2 className="h-4 w-4 text-royal-primary animate-spin" strokeWidth={3} />
+                        <span className="text-sm font-bold text-royal-primary tracking-wide uppercase italic">
+                          Synchronizing with {game.name} Servers...
+                        </span>
+                      </div>
+                    )}
+                    {nicknameStatus === "verified" && nickname && (
+                      <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-green-500/10 border border-green-500/30 shadow-[0_0_15px_-5px_rgba(34,197,94,0.3)]">
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-green-500/20 flex items-center justify-center">
+                            <UserRoundCheck className="h-5 w-5 text-green-400" />
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-black text-green-500/60 uppercase tracking-widest">Account Verified</div>
+                            <div className="font-display font-black text-green-100 text-lg leading-tight uppercase tracking-tight">{nickname}</div>
+                          </div>
                         </div>
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500 text-black font-black text-[9px] uppercase tracking-tighter">
+                          <ShieldCheck className="h-3 w-3" strokeWidth={3} />
+                          Active
+                        </div>
+                      </div>
+                    )}
+                    {nicknameStatus === "not_found" && (
+                      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                        <AlertCircle className="h-5 w-5 text-red-400" />
                         <div>
-                          <div className="text-[10px] font-black text-green-500/60 uppercase tracking-widest">Account Verified</div>
-                          <div className="font-display font-black text-green-100 text-lg leading-tight uppercase tracking-tight">{nickname}</div>
+                          <div className="text-[10px] font-black text-red-500/60 uppercase tracking-widest">Verification Failed</div>
+                          <div className="text-xs text-red-200 font-medium italic">Player not found. Please verify your ID & Zone.</div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500 text-black font-black text-[9px] uppercase tracking-tighter">
-                        <ShieldCheck className="h-3 w-3" strokeWidth={3} />
-                        Active
-                      </div>
-                    </div>
-                  )}
-                  {nicknameStatus === "not_found" && (
-                    <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30">
-                      <AlertCircle className="h-5 w-5 text-red-400" />
-                      <div>
-                        <div className="text-[10px] font-black text-red-500/60 uppercase tracking-widest">Verification Failed</div>
-                        <div className="text-xs text-red-200 font-medium italic">Player not found. Please verify your ID & Zone.</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
+
+                {/* Debug info - remove after fixing */}
+                {process.env.NODE_ENV === "development" && (
+                  <div className="mt-2 p-2 rounded bg-gray-800 text-xs text-gray-300 font-mono">
+                    <div>supportsLookup: {supportsLookup ? "true" : "false"}</div>
+                    <div>game.slug: {game.slug}</div>
+                    <div>nicknameStatus: {nicknameStatus}</div>
+                    <div>uidValid: {isValidUid(uid) ? "true" : "false"}</div>
+                  </div>
+                )}
             </div>
           </div>
 
