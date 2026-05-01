@@ -21,7 +21,7 @@
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",
     "@vercel/blob": "^2.3.3",
-    "bakong-khqr-npm": "^1.0.0",
+    "bakong-khqr": "^1.0.20",
     "bcryptjs": "^2.4.3",
     "jose": "^5.9.6",
     "lucide-react": "^1.8.0",
