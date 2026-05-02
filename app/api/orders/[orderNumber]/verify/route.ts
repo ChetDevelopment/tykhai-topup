@@ -77,11 +77,15 @@ export async function POST(
     });
   }
 
-  // PENDING - check Bakong API and auto-complete if paid
+  // PENDING - READ-ONLY check (does NOT finalize payment)
+  // Payment finalization happens ONLY in webhook → markOrderPaid()
   if (order.status === "PENDING") {
     const md5Hash = (order as any).metadata?.bakongMd5;
 
+    console.log("[verify] Order:", order.orderNumber, "Status:", order.status, "MD5:", md5Hash);
+
     if (!md5Hash) {
+      console.error("[verify] No MD5 hash found for order:", order.orderNumber);
       return NextResponse.json({
         orderNumber: order.orderNumber,
         status: "PENDING",
@@ -91,72 +95,55 @@ export async function POST(
     }
 
     try {
+      // Add delay to allow Bakong API to propagate transaction
+      console.log("[verify] Waiting 5 seconds before checking Bakong...");
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      console.log("[verify] READ-ONLY check - calling checkBakongPayment with MD5:", md5Hash);
       const bakongResult = await checkBakongPayment(md5Hash);
+      console.log("[verify] Bakong result (read-only):", JSON.stringify(bakongResult));
+
+      // DO NOT call markOrderPaid() - webhook is the SINGLE SOURCE OF TRUTH
+      // Only return status to client for display purposes
 
       if (bakongResult.paid) {
-        // Validate payment amount
-        if (bakongResult.amount) {
-          const paidAmount = parseFloat(String(bakongResult.amount));
-          const validation = validatePaymentAmount(
-            order.amountUsd,
-            order.currency === "KHR" ? order.amountKhr : undefined,
-            paidAmount,
-            order.currency
-          );
-
-          if (!validation.valid) {
-            await logSecurityEvent("PAYMENT_AMOUNT_MISMATCH", {
-              orderNumber: order.orderNumber,
-              paidAmount,
-              expectedAmount: order.currency === "KHR" ? order.amountKhr : order.amountUsd,
-              currency: order.currency,
-              message: validation.message,
-              source: "verify_polling",
-            }, req);
-
-            await prisma.order.update({
-              where: { id: order.id },
-              data: {
-                status: "FAILED",
-                failureReason: `Payment amount mismatch: ${validation.message}`,
-              },
-            });
-
-            return NextResponse.json({
-              orderNumber: order.orderNumber,
-              status: "FAILED",
-              isPaid: false,
-              error: "Payment amount mismatch",
-            }, { status: 400 });
-          }
-        }
-
-        // Payment confirmed - auto-complete (mark PAID + enqueue delivery)
-        const markResult = await markOrderPaid(order.id, {
-          paymentRef: order.paymentRef || `POLL-${md5Hash.slice(0, 16)}`,
-          amount: bakongResult.amount ? parseFloat(String(bakongResult.amount)) : order.amountUsd,
-          currency: bakongResult.currency || order.currency,
-          transactionId: bakongResult.transactionId,
-          verifiedBy: "polling",
-        });
-
-        if (markResult.success) {
-          return NextResponse.json({
-            orderNumber: order.orderNumber,
-            status: markResult.status,
-            isPaid: true,
-            message: "Payment verified via polling",
-          });
-        }
-
-        // markOrderPaid returned non-success (might be race with webhook)
+        // Payment detected - inform client, but DO NOT finalize
+        console.log("[verify] Payment detected for", order.orderNumber, "- waiting for webhook to finalize");
         return NextResponse.json({
           orderNumber: order.orderNumber,
-          status: markResult.status,
-          isPaid: markResult.status === "QUEUED" || markResult.status === "PAID",
-          message: markResult.message,
+          status: "PENDING", // Still PENDING until webhook confirms
+          isPaid: false,
+          message: "Payment detected - finalizing...",
+          debug: "Payment found, awaiting webhook confirmation",
         });
       }
+
+      // Payment not yet confirmed
+      return NextResponse.json({
+        orderNumber: order.orderNumber,
+        status: "PENDING",
+        isPaid: false,
+        message: "Payment not yet confirmed",
+      });
+    } catch (error) {
+      // Bakong API error - return pending, let webhook handle
+      console.error("[verify] API check failed:", error);
+      return NextResponse.json({
+        orderNumber: order.orderNumber,
+        status: "PENDING",
+        isPaid: false,
+        message: "Bakong API check failed",
+      });
+    }
+  }
+
+  // Default fallback
+  return NextResponse.json({
+    orderNumber: order.orderNumber,
+    status: order.status,
+    isPaid: false,
+  });
+}
 
       // Payment not yet confirmed
       return NextResponse.json({

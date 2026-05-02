@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useCsrfToken } from "@/lib/useCsrfToken";
 import { 
   Plus, 
   Gamepad2, 
@@ -189,6 +190,7 @@ export default function AdminGamesPage() {
 }
 
 function GameForm({ initial, onCancel, onSaved }: { initial: any; onCancel: () => void; onSaved: () => void }) {
+  const { token: csrfToken } = useCsrfToken();
   const [form, setForm] = useState({
     slug: initial?.slug || "",
     name: initial?.name || "",
@@ -214,16 +216,17 @@ function GameForm({ initial, onCancel, onSaved }: { initial: any; onCancel: () =
     setError(null);
     const payload = {
       ...form,
-      servers: JSON.stringify(form.servers.split(",").map((s: string) => s.trim()).filter(Boolean)),
+      imageUrl: form.imageUrl || undefined,
       bannerUrl: form.bannerUrl || undefined,
       description: form.description || undefined,
       uidExample: form.uidExample || undefined,
+      servers: JSON.stringify(form.servers.split(",").map((s: string) => s.trim()).filter(Boolean)),
     };
     const url = initial ? `/api/admin/games/${initial.id}` : "/api/admin/games";
     const method = initial ? "PATCH" : "POST";
     const res = await fetch(url, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-csrf-token": csrfToken || "" },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -268,6 +271,7 @@ function GameForm({ initial, onCancel, onSaved }: { initial: any; onCancel: () =
             value={form.imageUrl}
             onChange={(v) => setForm({ ...form, imageUrl: v })}
             required
+            csrfToken={csrfToken}
           />
         </div>
         <div>
@@ -275,6 +279,7 @@ function GameForm({ initial, onCancel, onSaved }: { initial: any; onCancel: () =
           <ImageField
             value={form.bannerUrl}
             onChange={(v) => setForm({ ...form, bannerUrl: v })}
+            csrfToken={csrfToken}
           />
         </div>
         <div>
@@ -330,10 +335,12 @@ function ImageField({
   value,
   onChange,
   required,
+  csrfToken,
 }: {
   value: string;
   onChange: (v: string) => void;
   required?: boolean;
+  csrfToken?: string | null;
 }) {
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -348,7 +355,14 @@ function ImageField({
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+      const headers: Record<string, string> = {};
+      if (csrfToken) headers["x-csrf-token"] = csrfToken;
+
+      const res = await fetch("/api/admin/upload", {
+        method: "POST",
+        body: fd,
+        headers,
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Upload failed");
       onChange(data.url);
@@ -365,7 +379,7 @@ function ImageField({
         {value ? (
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-royal-border bg-royal-bg">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={value} alt="" className="h-full w-full object-cover" />
+            <img src={value} alt="" className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           </div>
         ) : (
           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-royal-border bg-royal-bg text-xs text-royal-muted">
@@ -398,7 +412,7 @@ function ImageField({
       </div>
       <input
         className="input font-mono text-xs"
-        placeholder="or paste an image URL"
+        placeholder="Paste image URL (e.g., https://cdn.tykhai.com/games/mlbb.jpg)"
         value={value}
         required={required}
         onChange={(e) => onChange(e.target.value)}

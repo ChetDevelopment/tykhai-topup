@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const rawBodyString = JSON.stringify(body);
 
+    console.log("[webhook] Received webhook:", { body: rawBodyString });
+
     const parseResult = WebhookSchema.safeParse(body);
     if (!parseResult.success) {
       await logSecurityEvent("INVALID_WEBHOOK_PAYLOAD", { errors: parseResult.error.errors }, req);
@@ -57,6 +59,8 @@ export async function POST(req: NextRequest) {
     }
 
     const md5Hash = sanitizeInput(validatedBody.md5 || validatedBody.md5hash || "");
+    console.log("[webhook] Extracted MD5:", md5Hash);
+
     if (!md5Hash || md5Hash.length !== 32) {
       return NextResponse.json({ error: "Invalid MD5 hash" }, { status: 400 });
     }
@@ -79,6 +83,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: true, reason: "already_processed" });
     }
 
+    console.log("[webhook] Looking for order with MD5:", md5Hash);
+
     const order = await prisma.order.findFirst({
       where: {
         metadata: { path: ["bakongMd5"], string_contains: md5Hash },
@@ -92,11 +98,39 @@ export async function POST(req: NextRequest) {
         currency: true,
         paymentRef: true,
         playerUid: true,
+        metadata: true,
       },
     });
 
+    console.log("[webhook] Order found:", order ? {
+      orderNumber: order.orderNumber,
+      status: order.status,
+      paymentRef: order.paymentRef,
+      md5InMetadata: (order as any).metadata?.bakongMd5,
+    } : "NOT FOUND");
+
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
+    }
+
+    // CRITICAL: Verify MD5 matches exactly
+    const storedMd5 = (order as any).metadata?.bakongMd5;
+    console.log("[webhook] MD5 Comparison:", {
+      receivedMd5: md5Hash,
+      storedMd5: storedMd5,
+      match: md5Hash === storedMd5,
+      receivedLength: md5Hash?.length,
+      storedLength: storedMd5?.length,
+    });
+
+    if (storedMd5 && md5Hash !== storedMd5) {
+      console.error("[webhook] MD5 MISMATCH!", { received: md5Hash, stored: storedMd5 });
+      await logSecurityEvent("WEBHOOK_MD5_MISMATCH", {
+        orderNumber: order.orderNumber,
+        receivedMd5: md5Hash,
+        storedMd5,
+      }, req);
+      return NextResponse.json({ error: "MD5 mismatch" }, { status: 400 });
     }
 
     if (order.status === "PAID" || order.status === "QUEUED" || order.status === "DELIVERING" || order.status === "DELIVERED") {

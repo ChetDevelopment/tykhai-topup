@@ -7,6 +7,11 @@ import { guardAdminApi } from "@/lib/api-security";
 
 export const runtime = "nodejs";
 
+// Fail-fast if token is missing
+if (!process.env.BLOB_READ_WRITE_TOKEN) {
+  throw new Error("FATAL: BLOB_READ_WRITE_TOKEN is required. Server startup aborted.");
+}
+
 const MAX_BYTES = 5 * 1024 * 1024;
 
 const ALLOWED_TYPES: Record<string, string> = {
@@ -100,17 +105,26 @@ export async function POST(req: NextRequest) {
 
     const name = `${Date.now()}-${crypto.randomBytes(16).toString("hex")}.${ALLOWED_TYPES[detectedType]}`;
 
-    // Upload to Vercel Blob
-    const blob = await put(name, buffer, {
-      access: "public",
-      contentType: detectedType,
-    });
+    // Upload to Vercel Blob (token is now available)
+    try {
+      const blob = await put(name, buffer, {
+        access: "public",
+        contentType: detectedType,
+      });
 
-    return NextResponse.json({
-      url: blob.url,
-      size: file.size,
-      type: detectedType,
-    });
+      return NextResponse.json({
+        url: blob.url,
+        size: file.size,
+        type: detectedType,
+      });
+    } catch (blobError) {
+      console.error("[upload] Vercel Blob error:", blobError);
+      const message = blobError instanceof Error ? blobError.message : "Upload failed";
+      return NextResponse.json(
+        { error: message.includes("Access denied") ? "Invalid BLOB_READ_WRITE_TOKEN" : message },
+        { status: 500 }
+      );
+    }
   } catch (error) {
     console.error("[upload] error:", error);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });

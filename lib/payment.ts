@@ -71,6 +71,15 @@ const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 const GAMEDROP_TOKEN = process.env.GAMEDROP_TOKEN || "";
 const G2BULK_TOKEN = process.env.G2BULK_TOKEN || "";
 
+// Debug: Log Bakong configuration on startup
+console.log("[bakong] Configuration loaded:", {
+  hasToken: !!BAKONG_TOKEN,
+  tokenPrefix: BAKONG_TOKEN ? BAKONG_TOKEN.slice(0, 10) + "..." : "MISSING",
+  apiBase: BAKONG_API_BASE,
+  account: BAKONG_ACCOUNT ? "SET" : "MISSING",
+  merchantName: BAKONG_MERCHANT_NAME,
+});
+
 // Lock settings
 const LOCK_DURATION_MS = 30_000; // 30 seconds
 const LOCK_TIMEOUT_MS = 60_000; // 60 seconds for delivery operations
@@ -214,27 +223,58 @@ async function bakongApiRequest(endpoint: string, payload: unknown): Promise<any
 
 export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerificationResult> {
   if (!BAKONG_TOKEN) {
+    console.error("[bakong] FATAL: BAKONG_TOKEN not configured");
     throw PaymentError.configurationError("Bakong");
   }
 
   if (!md5Hash || md5Hash.length !== 32) {
+    console.error("[bakong] Invalid MD5 hash:", { md5Hash, length: md5Hash?.length });
     return { status: "FAILED", paid: false, message: `Invalid MD5 hash` };
   }
 
+  console.log("[bakong] ======= START CHECK =======");
+  console.log("[bakong] Checking payment with MD5:", md5Hash);
+  console.log("[bakong] MD5 length:", md5Hash.length);
+  console.log("[bakong] BAKONG_API_BASE:", process.env.BAKONG_API_BASE || "https://api-bakong.nbc.gov.kh");
+  console.log("[bakong] BAKONG_TOKEN exists:", !!BAKONG_TOKEN);
+
   try {
-    const result = await bakongApiRequest("/v1/check_transaction_by_md5", { md5: md5Hash });
+    const payload = { md5: md5Hash };
+    console.log("[bakong] Sending request:", JSON.stringify(payload));
 
-    const responseCode = result.responseCode ?? result.code;
-    const data = result.data ?? result.result;
+    const result = await bakongApiRequest("/v1/check_transaction_by_md5", payload);
 
+    console.log("[bakong] Raw API response (full):", JSON.stringify(result, null, 2));
+
+    // Handle ALL possible response formats
+    const responseCode = result.responseCode ?? result.code ?? result.statusCode;
+    const data = result.data ?? result.result ?? result.transaction ?? result;
+
+    console.log("[bakong] Parsed responseCode:", responseCode);
+    console.log("[bakong] Parsed data object:", JSON.stringify(data));
+
+    // Check if transaction exists (responseCode 0 = success)
     if (responseCode === 0 && data) {
-      const status = String(data.status ?? data.state ?? "").toUpperCase();
-      const amount = data.amount ?? data.amountValue;
+      const status = String(data.status ?? data.state ?? data.transactionStatus ?? "").toUpperCase();
+      const amount = data.amount ?? data.amountValue ?? data.paidAmount;
       const currency = data.currency ?? "USD";
-      const transactionId = data.hash ?? data.transactionId ?? md5Hash;
-      const paidAtMs = data.acknowledgedDateMs ?? data.acknowledgedDate ?? data.completedAt;
+      const transactionId = data.hash ?? data.transactionId ?? data.ref ?? md5Hash;
+      const paidAtMs = data.acknowledgedDateMs ?? data.acknowledgedDate ?? data.completedAt ?? data.transactionDate;
 
-      const isPaid = status === "PAID" || status === "COMPLETED" || status === "SETTLED";
+      // Check ALL possible "paid" status strings
+      const isPaid = 
+        status === "PAID" || 
+        status === "COMPLETED" || 
+        status === "SETTLED" ||
+        status === "SUCCESS" ||
+        String(data.paid) === "true" ||
+        data.paymentStatus === "PAID";
+
+      console.log("[bakong] ======= FINAL DECISION =======");
+      console.log("[bakong] Status from API:", status);
+      console.log("[bakong] isPaid decision:", isPaid);
+      console.log("[bakong] Amount:", amount, "Currency:", currency);
+      console.log("[bakong] Transaction ID:", transactionId);
 
       return {
         status: isPaid ? "PAID" : "PENDING",
@@ -243,12 +283,21 @@ export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerifi
         transactionId,
         amount: amount ? parseFloat(String(amount)) : undefined,
         currency,
-        rawResponse: data,
+        rawResponse: result, // Store full response for debugging
       };
     }
 
-    return { status: "PENDING", paid: false };
+    // Transaction not found or not paid yet
+    console.log("[bakong] ======= NOT PAID =======");
+    console.log("[bakong] responseCode:", responseCode, "(0 = success, other = error)");
+    console.log("[bakong] Has data?:", !!data);
+    if (data) {
+      console.log("[bakong] Data content:", JSON.stringify(data));
+    }
+    
+    return { status: "PENDING", paid: false, rawResponse: result };
   } catch (err) {
+    console.error("[bakong] API request failed:", err);
     return {
       status: "FAILED",
       paid: false,
@@ -409,7 +458,7 @@ export async function extendOrderLock(
 
 /**
  * Mark order as PAID after payment confirmation.
- * This is the ONLY function that transitions PENDING → PAID.
+ * This is the SINGLE SOURCE OF TRUTH - ONLY function that transitions PENDING → PAID.
  * 
  * Called by:
  * - Webhook handler (primary)
@@ -417,6 +466,10 @@ export async function extendOrderLock(
  * - Cron reconciliation (recovery for missed events)
  * 
  * After marking PAID, it enqueues a delivery job (does NOT execute delivery).
+ * 
+ * STRICT STATE MACHINE:
+ * PENDING → PAID → QUEUED → DELIVERING → DELIVERED
+ * Rejects: PAID → PAID (idempotent), DELIVERED → PAID (invalid)
  */
 export async function markOrderPaid(orderId: string, paymentData: {
   paymentRef: string;
@@ -427,7 +480,7 @@ export async function markOrderPaid(orderId: string, paymentData: {
 }): Promise<{ success: boolean; status: string; message?: string }> {
   const processorId = `payment_${paymentData.verifiedBy}_${Date.now()}`;
 
-  // Acquire lock
+  // Acquire lock (prevents race conditions)
   const lock = await acquireOrderLock(orderId, processorId);
   if (!lock.locked || !lock.order) {
     return { success: false, status: "LOCKED", message: "Order is being processed by another request" };
@@ -435,16 +488,25 @@ export async function markOrderPaid(orderId: string, paymentData: {
 
   const order = lock.order;
 
-  // Already paid or beyond - idempotent
-  if (order.status === "PAID" || order.status === "QUEUED" || order.status === "DELIVERING" || order.status === "DELIVERED") {
-    await releaseOrderLock(orderId, processorId);
-    return { success: true, status: order.status, message: "Order already processed" };
-  }
+  // STRICT STATE MACHINE: Only allow PENDING → PAID
+  const allowedTransitions: Record<string, string[]> = {
+    "PENDING": ["PAID"],
+    // Any other state = reject (idempotent for completed, invalid for others)
+  };
 
-  // Terminal state
-  if (order.status === "FAILED" || order.status === "CANCELLED" || order.status === "REFUNDED") {
+  if (order.status !== "PENDING") {
+    // Idempotency check: already in a post-PAID state
+    const completedStates = ["PAID", "QUEUED", "DELIVERING", "DELIVERED"];
+    if (completedStates.includes(order.status)) {
+      await releaseOrderLock(orderId, processorId);
+      console.log(`[payment] Idempotent: order ${order.orderNumber} already ${order.status}`);
+      return { success: true, status: order.status, message: "Order already processed" };
+    }
+    
+    // Invalid transition attempt
     await releaseOrderLock(orderId, processorId);
-    return { success: false, status: order.status, message: `Order is in terminal state: ${order.status}` };
+    console.error(`[payment] Invalid state transition: ${order.status} → PAID`);
+    return { success: false, status: order.status, message: `Invalid transition from ${order.status}` };
   }
 
   try {
@@ -593,6 +655,9 @@ export async function checkPaymentStatus(orderId: string): Promise<{
  * - Manual trigger (admin panel)
  * 
  * This is the ONLY place where delivery is executed.
+ * 
+ * DELIVERY SAFETY: Ensures delivery runs only ONCE per order.
+ * Guard: if deliveryStatus === "DELIVERED" → skip immediately.
  */
 export async function processDeliveryQueue(limit: number = 20): Promise<{
   processed: number;
@@ -606,30 +671,40 @@ export async function processDeliveryQueue(limit: number = 20): Promise<{
   const jobs = await prisma.deliveryJob.findMany({
     where: {
       status: "PENDING",
-      OR: [
-        { nextAttemptAt: null },
-        { nextAttemptAt: { lte: new Date() } },
-      ],
-      attempt: { lt: prisma.deliveryJob.fields.maxAttempts },
-    },
-    include: {
-      order: { include: { product: true, game: true } },
+      nextAttemptAt: { lte: new Date() },
     },
     take: limit,
-    orderBy: { createdAt: "asc" },
+    orderBy: { attemptNumber: "asc" },
+    include: { order: { include: { game: true, product: true } } },
   });
 
-  const results = { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
+  if (jobs.length === 0) {
+    return { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
+  }
+
+  let succeeded = 0;
+  let failed = 0;
+  let skipped = 0;
 
   for (const job of jobs) {
-    results.processed++;
+    try {
+      // DELIVERY SAFETY: Check if already delivered (idempotent)
+      if (job.order.deliveryStatus === "DELIVERED" || job.order.status === "DELIVERED") {
+        console.log(`[delivery] Order ${job.order.orderNumber} already delivered - skipping`);
+        await prisma.deliveryJob.update({
+          where: { id: job.id },
+          data: { status: "COMPLETED", completedAt: new Date() },
+        });
+        skipped++;
+        continue;
+      }
 
-    // Try to acquire lock on the order
-    const lock = await acquireOrderLock(job.orderId, workerId, LOCK_TIMEOUT_MS);
-    if (!lock.locked) {
-      results.skipped++;
-      continue;
-    }
+      // Acquire order lock
+      const orderLock = await acquireOrderLock(job.orderId, workerId);
+      if (!orderLock.locked) {
+        skipped++;
+        continue;
+      }
 
     try {
       // Update job to PROCESSING

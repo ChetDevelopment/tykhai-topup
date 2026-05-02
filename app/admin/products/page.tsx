@@ -182,6 +182,19 @@ function ProductForm({ games, defaultGameId, initial, onCancel, onSaved }: any) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const selectedGame = games.find((g: any) => g.id === form.gameId);
+  const isFreeFire = selectedGame?.slug === 'free-fire';
+
+  // Auto-set provider based on game selection
+  useEffect(() => {
+    if (initial || !form.gameId) return;
+    if (isFreeFire) {
+      setForm(prev => ({ ...prev, gameDropOfferId: "" }));
+    } else {
+      setForm(prev => ({ ...prev, g2bulkCatalogueName: "" }));
+    }
+  }, [form.gameId]);
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -299,28 +312,30 @@ function ProductForm({ games, defaultGameId, initial, onCancel, onSaved }: any) 
 
         <div className="md:col-span-3 pt-4 border-t border-royal-border">
           <h4 className="text-sm font-bold text-royal-accent mb-3 uppercase tracking-widest">🔌 Provider Integration</h4>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="label">GameDrop Offer ID</label>
-              <input 
-                className="input font-mono text-xs" 
-                type="number" 
-                value={form.gameDropOfferId} 
-                onChange={(e) => setForm({ ...form, gameDropOfferId: e.target.value })} 
-                placeholder="e.g. 2003"
-              />
-            </div>
+          {isFreeFire ? (
             <div>
               <label className="label">G2Bulk Catalogue Name (Free Fire SGMY)</label>
-              <input 
-                className="input font-mono text-xs" 
-                value={form.g2bulkCatalogueName} 
-                onChange={(e) => setForm({ ...form, g2bulkCatalogueName: e.target.value })} 
+              <input
+                className="input font-mono text-xs"
+                value={form.g2bulkCatalogueName}
+                onChange={(e) => setForm({ ...form, g2bulkCatalogueName: e.target.value })}
                 placeholder="e.g. 100, 310, 520"
               />
-              <p className="text-xs text-royal-muted mt-1">Get from GET /games/freefire_sgmy/catalogue</p>
+              <p className="text-xs text-royal-muted mt-1">Auto-detected: Free Fire → G2Bulk provider</p>
             </div>
-          </div>
+          ) : (
+            <div>
+              <label className="label">GameDrop Offer ID</label>
+              <input
+                className="input font-mono text-xs"
+                type="number"
+                value={form.gameDropOfferId}
+                onChange={(e) => setForm({ ...form, gameDropOfferId: e.target.value })}
+                placeholder="e.g. 2003"
+              />
+              <p className="text-xs text-royal-muted mt-1">Auto-detected: Mobile game → GameDrop provider</p>
+            </div>
+          )}
         </div>
       </div>
 

@@ -15,7 +15,8 @@ import { pauseSystem, resumeSystem, sendBalanceAlert } from "./system-control";
 
 // ===================== Configuration =====================
 const WORKER_CONFIG = {
-  paymentCheckIntervalMs: 5 * 60 * 1000,  // Check pending payments every 5 min
+  paymentCheckIntervalMs: 30 * 1000,  // Check pending payments every 30 SECONDS (was 5 min - too slow!)
+  expireCheckIntervalMs: 15 * 60 * 1000, // Check expired orders every 15 min
   expireCheckIntervalMs: 15 * 60 * 1000, // Check expired orders every 15 min
   deliveryRetryIntervalMs: 10 * 60 * 1000, // Retry failed deliveries every 10 min
   fraudCheckIntervalMs: 30 * 60 * 1000, // Run fraud checks every 30 min
@@ -27,23 +28,43 @@ const WORKER_CONFIG = {
 };
 
 // ===================== Worker State =====================
+// Use atomic flag with timeout protection to prevent race conditions
 let isRunning = false;
 let intervals: NodeJS.Timeout[] = [];
+let lastRunTimestamp: Record<string, number> = {};
+const WORKER_TIMEOUT_MS = 60 * 1000; // 60 second timeout per job
 
 // ===================== Main Worker Loop =====================
 export async function startBackgroundWorker() {
   console.log("[worker] Starting background worker...");
 
-  // Job 1: Check pending payments
+  // Job 1: Check pending payments (with execution lock)
   const paymentInterval = setInterval(async () => {
-    if (isRunning) return; // Prevent overlap
+    const jobName = "checkPendingPayments";
+    const now = Date.now();
+    
+    // Prevent overlap + timeout protection
+    if (isRunning) {
+      console.log(`[worker] ${jobName} skipped - previous run still active`);
+      return;
+    }
+    
+    // Timeout protection: force-release lock if stuck
+    if (lastRunTimestamp[jobName] && (now - lastRunTimestamp[jobName]) > WORKER_TIMEOUT_MS) {
+      console.warn(`[worker] ${jobName} timeout - force releasing lock`);
+      isRunning = false;
+    }
+    
+    lastRunTimestamp[jobName] = now;
     isRunning = true;
+    
     try {
       await checkPendingPayments();
     } catch (err) {
-      console.error("[worker] Payment check error:", err);
+      console.error(`[worker] ${jobName} error:`, err);
     } finally {
       isRunning = false;
+      delete lastRunTimestamp[jobName];
     }
   }, WORKER_CONFIG.paymentCheckIntervalMs);
 
@@ -131,9 +152,21 @@ async function checkPendingPayments() {
         continue;
       }
 
-      // Check payment status
-      const paymentRef = order.paymentRef!;
-      const result = await checkBakongPayment(paymentRef);
+      // Check payment status - use MD5 hash from metadata (correct source)
+      const md5Hash = (order as any).metadata?.bakongMd5 || order.paymentRef;
+      
+      console.log("[worker] Checking order:", order.orderNumber, {
+        paymentRef: order.paymentRef,
+        md5FromMetadata: (order as any).metadata?.bakongMd5,
+        usingHash: md5Hash,
+      });
+
+      if (!md5Hash) {
+        console.error("[worker] No MD5 hash for order:", order.orderNumber);
+        continue;
+      }
+
+      const result = await checkBakongPayment(md5Hash);
 
       if (!result) continue; // No update yet
 
@@ -151,24 +184,26 @@ async function checkPendingPayments() {
           continue;
         }
 
-        // Payment valid - process
-        await logPaymentEvent(order.id, "VERIFIED", {
-          paymentRef,
-          amount: result.amount,
-          currency: result.currency,
+        // Payment valid - use SINGLE SOURCE OF TRUTH (markOrderPaid)
+        const { markOrderPaid } = await import("./payment");
+        const markResult = await markOrderPaid(order.id, {
+          paymentRef: result.transactionId || paymentRef,
+          amount: result.amount ? parseFloat(String(result.amount)) : order.amountUsd,
+          currency: result.currency || order.currency,
+          transactionId: result.transactionId,
+          verifiedBy: "cron",
         });
 
-        await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            status: "PAID",
-            paidAt: new Date(),
-            paymentRef: result.transactionId || paymentRef,
-          },
-        });
-
-        // Trigger delivery
-        await scheduleDelivery(order.id);
+        if (markResult.success) {
+          await logPaymentEvent(order.id, "VERIFIED", {
+            paymentRef,
+            amount: result.amount,
+            currency: result.currency,
+            method: "cron_background_worker",
+          });
+        } else {
+          console.log(`[worker] Order ${order.orderNumber} already processed: ${markResult.status}`);
+        }
       } else if (String(result.status) === "UNPAID" || String(result.status) === "expired") {
         // Payment not completed
         await logPaymentEvent(order.id, "STILL_PENDING", {
