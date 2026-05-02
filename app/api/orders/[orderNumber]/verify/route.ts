@@ -103,18 +103,37 @@ export async function POST(
       const bakongResult = await checkBakongPayment(md5Hash);
       console.log("[verify] Bakong result (read-only):", JSON.stringify(bakongResult));
 
-      // DO NOT call markOrderPaid() - webhook is the SINGLE SOURCE OF TRUTH
-      // Only return status to client for display purposes
-
+      // Webhook is primary, but verify acts as fallback for localhost/dev
       if (bakongResult.paid) {
-        // Payment detected - inform client, but DO NOT finalize
-        console.log("[verify] Payment detected for", order.orderNumber, "- waiting for webhook to finalize");
+        // Payment detected - finalize it (critical for localhost where webhooks can't reach)
+        console.log("[verify] Payment detected for", order.orderNumber, "- finalizing payment");
+        try {
+          const { markOrderPaid } = await import("@/lib/payment");
+          const markResult = await markOrderPaid(order.id, {
+            paymentRef: order.paymentRef || `VERIFY-${order.orderNumber}`,
+            amount: bakongResult.amount ? parseFloat(String(bakongResult.amount)) : order.amountUsd,
+            currency: bakongResult.currency || order.currency,
+            transactionId: bakongResult.transactionId,
+            verifiedBy: "verify-poll",
+          });
+
+          if (markResult.success || markResult.status === "QUEUED") {
+            return NextResponse.json({
+              orderNumber: order.orderNumber,
+              status: "PAID",
+              isPaid: true,
+              message: "Payment confirmed and finalized",
+            });
+          }
+        } catch (markError) {
+          console.error("[verify] Failed to mark order paid:", markError);
+        }
+
         return NextResponse.json({
           orderNumber: order.orderNumber,
-          status: "PENDING", // Still PENDING until webhook confirms
+          status: "PENDING",
           isPaid: false,
           message: "Payment detected - finalizing...",
-          debug: "Payment found, awaiting webhook confirmation",
         });
       }
 
@@ -128,32 +147,6 @@ export async function POST(
     } catch (error) {
       // Bakong API error - return pending, let webhook handle
       console.error("[verify] API check failed:", error);
-      return NextResponse.json({
-        orderNumber: order.orderNumber,
-        status: "PENDING",
-        isPaid: false,
-        message: "Bakong API check failed",
-      });
-    }
-  }
-
-  // Default fallback
-  return NextResponse.json({
-    orderNumber: order.orderNumber,
-    status: order.status,
-    isPaid: false,
-  });
-}
-
-      // Payment not yet confirmed
-      return NextResponse.json({
-        orderNumber: order.orderNumber,
-        status: "PENDING",
-        isPaid: false,
-        message: "Payment not yet confirmed",
-      });
-    } catch (error) {
-      // Bakong API error - return pending, let next poll retry
       return NextResponse.json({
         orderNumber: order.orderNumber,
         status: "PENDING",

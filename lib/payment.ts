@@ -222,6 +222,19 @@ async function bakongApiRequest(endpoint: string, payload: unknown): Promise<any
 }
 
 export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerificationResult> {
+  // Simulation mode - pretend payment is always successful
+  if (SIM_MODE) {
+    console.log("[bakong] SIMULATION: Pretending payment is PAID for", md5Hash);
+    return {
+      status: "PAID",
+      paid: true,
+      message: "Payment confirmed (SIMULATION)",
+      amount: 0,
+      currency: "USD",
+      transactionId: `SIM-${Date.now()}`,
+    };
+  }
+
   if (!BAKONG_TOKEN) {
     console.error("[bakong] FATAL: BAKONG_TOKEN not configured");
     throw PaymentError.configurationError("Bakong");
@@ -682,12 +695,9 @@ export async function processDeliveryQueue(limit: number = 20): Promise<{
     return { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
   }
 
-  let succeeded = 0;
-  let failed = 0;
-  let skipped = 0;
+  const results = { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
 
   for (const job of jobs) {
-    try {
       // DELIVERY SAFETY: Check if already delivered (idempotent)
       if (job.order.deliveryStatus === "DELIVERED" || job.order.status === "DELIVERED") {
         console.log(`[delivery] Order ${job.order.orderNumber} already delivered - skipping`);
@@ -695,14 +705,14 @@ export async function processDeliveryQueue(limit: number = 20): Promise<{
           where: { id: job.id },
           data: { status: "COMPLETED", completedAt: new Date() },
         });
-        skipped++;
+        results.skipped++;
         continue;
       }
 
       // Acquire order lock
       const orderLock = await acquireOrderLock(job.orderId, workerId);
       if (!orderLock.locked) {
-        skipped++;
+        results.skipped++;
         continue;
       }
 
@@ -810,7 +820,7 @@ export async function processDeliveryQueue(limit: number = 20): Promise<{
     } catch (err) {
       // Unexpected error - reset job for retry
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
-
+      
       await prisma.deliveryJob.update({
         where: { id: job.id },
         data: {
@@ -819,7 +829,7 @@ export async function processDeliveryQueue(limit: number = 20): Promise<{
           errorMessage,
         },
       });
-
+      
       await prisma.order.update({
         where: { id: job.orderId },
         data: {
@@ -827,15 +837,20 @@ export async function processDeliveryQueue(limit: number = 20): Promise<{
           deliveryStatus: "QUEUED",
         },
       });
-
+      
       results.failed++;
     } finally {
       await releaseOrderLock(job.orderId, workerId);
     }
-  }
+  } // End of for loop
 
   return results;
 }
+
+/**
+ * Reconcile orders that are stuck in PENDING but may have been paid.
+ * Called by cron as a safety net.
+ */
 
 async function executeDeliveryForJob(job: any): Promise<{
   success: boolean;

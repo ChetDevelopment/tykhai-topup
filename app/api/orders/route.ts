@@ -351,16 +351,19 @@ export async function POST(req: NextRequest) {
         where: { id: 1 },
         data: { reservedBalance: { increment: finalPrice } },
       });
-      await prisma.walletReservation.create({
-        data: {
-          userId: user?.userId || "",
-          amount: finalPrice,
-          currency: data.currency,
-          status: "ACTIVE",
-          expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min
-          orderId: order.id,
-        },
-      });
+
+      if (user?.userId) {
+        await prisma.walletReservation.create({
+          data: {
+            userId: user.userId,
+            amount: finalPrice,
+            currency: data.currency,
+            status: "ACTIVE",
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min
+            orderId: order.id,
+          },
+        });
+      }
     }
 
     // Handle wallet payment - no gateway needed
