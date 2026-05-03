@@ -1,27 +1,12 @@
-﻿// @ts-nocheck
+// @ts-nocheck
 /**
- * Production-Grade Payment System for Ty Khai TopUp
+ * Simplified Payment System - QR Generation Guaranteed
  * 
- * ARCHITECTURE PRINCIPLES:
- * 1. Webhook = PRIMARY source of truth for payment state
- * 2. Verify = READ-ONLY payment status check (no mutations)
- * 3. Cron = RECOVERY only (missed webhooks, stuck jobs)
- * 4. Delivery = QUEUE-BASED, never executed in request flow
- * 5. Locking = DB-level optimistic locks prevent race conditions
- * 
- * STATE MACHINE:
- * PENDING → (webhook/verify confirms) → PAID → (enqueue) → QUEUED
- *                                                  ↓ (worker)
- *                                            DELIVERING → DELIVERED
- *                                                       ↓ (fail)
- *                                                 FAILED_RETRY → (retry) → DELIVERING
- *                                                              ↓ (max attempts)
- *                                                         FAILED_FINAL
- * 
- * CONCURRENCY MODEL:
- * - Each order has lockUntil/lockedBy fields
- * - Only one process can hold a lock at a time
- * - Locks expire after 30 seconds (safety net for crashed processes)
+ * CRITICAL RULES:
+ * 1. QR generation is SYNCHRONOUS (no async calls in simulation)
+ * 2. QR is NEVER null (fallback always available)
+ * 3. Simulation mode has NO external dependencies
+ * 4. NO queues, locks, or workers in QR generation path
  */
 
 import crypto from "crypto";
@@ -32,16 +17,11 @@ import {
   PaymentInitResult,
   PaymentVerificationResult,
   PaymentError,
-  PaymentStatus,
   PAYMENT_PROVIDERS,
 } from "./payment-types";
 import { hashSha256, encryptField } from "./encryption";
-import { prisma } from "./prisma";
-import { logSecurityEvent } from "./security";
-import { createGameDropOrder } from "./gamedrop";
-import { createG2BulkOrder } from "./g2bulk";
 
-// ===================== KHQR Generation =====================
+// ===================== KHQR Generation Helpers =====================
 
 function tl(tag: string, value: string): string {
   return tag + value.length.toString().padStart(2, "0") + value;
@@ -61,37 +41,26 @@ function crc16(data: string): string {
 
 // ===================== Configuration =====================
 
-const SIM_MODE = process.env.PAYMENT_SIMULATION_MODE === "true";
+const SIM_MODE = process.env.PAYMENT_SIMULATION_MODE === "true" || process.env.ENABLE_DEV_BAKONG === "true";
 const BAKONG_ACCOUNT = process.env.BAKONG_ACCOUNT || "";
-const BAKONG_MERCHANT_NAME = process.env.BAKONG_MERCHANT_NAME || "";
+const BAKONG_MERCHANT_NAME = process.env.BAKONG_MERCHANT_NAME || "Ty Khai TopUp";
 const BAKONG_MERCHANT_CITY = process.env.BAKONG_MERCHANT_CITY || "Phnom Penh";
-const BAKONG_TOKEN = process.env.BAKONG_TOKEN || "";
-const BAKONG_API_BASE = process.env.BAKONG_API_BASE || "https://api-bakong.nbc.gov.kh";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
-const GAMEDROP_TOKEN = process.env.GAMEDROP_TOKEN || "";
-const G2BULK_TOKEN = process.env.G2BULK_TOKEN || "";
 
-// Debug: Log Bakong configuration on startup
-console.log("[bakong] Configuration loaded:", {
-  hasToken: !!BAKONG_TOKEN,
-  tokenPrefix: BAKONG_TOKEN ? BAKONG_TOKEN.slice(0, 10) + "..." : "MISSING",
-  apiBase: BAKONG_API_BASE,
-  account: BAKONG_ACCOUNT ? "SET" : "MISSING",
-  merchantName: BAKONG_MERCHANT_NAME,
-});
-
-// Lock settings
-const LOCK_DURATION_MS = 30_000; // 30 seconds
-const LOCK_TIMEOUT_MS = 60_000; // 60 seconds for delivery operations
-
-// ===================== QR Generation =====================
-
+// ===================== UNIFIED PAYMENT FACTORY =====================
+/**
+ * CRITICAL: QR generation is SYNCHRONOUS in simulation mode
+ * NO external calls, NO queues, NO locks
+ */
 export async function initiatePayment(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
+  // FAST PATH: Simulation mode - PURE SYNCHRONOUS QR GENERATION
+  if (SIM_MODE) {
+    return initiateSimulatedPayment(args);
+  }
+  
+  // Production mode
   const provider = PAYMENT_PROVIDERS[args.method];
   if (!provider?.enabled) {
-    if (SIM_MODE && args.method !== "BAKONG") {
-      return initiateSimulatedPayment(args);
-    }
     throw PaymentError.configurationError(args.method);
   }
 
@@ -105,7 +74,14 @@ export async function initiatePayment(args: InitiatePaymentArgs): Promise<Paymen
     throw new PaymentError(`Unsupported payment method: ${args.method}`, "UNSUPPORTED_METHOD", 400);
   }
 
-  return handler(args);
+  const result = await handler(args);
+  
+  // GUARANTEE: For non-wallet payments, validate QR before returning
+  if (args.method !== "WALLET" && !result.qrString) {
+    throw new PaymentError("QR generation failed", "QR_GENERATION_FAILED", 500);
+  }
+  
+  return result;
 }
 
 async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
@@ -186,17 +162,68 @@ async function initiateWallet(args: InitiatePaymentArgs): Promise<PaymentInitRes
   };
 }
 
+/**
+ * SIMULATION MODE PAYMENT - INSTANT, NO EXTERNAL CALLS
+ * 
+ * STRICT RULES:
+ * - NO external API calls
+ * - NO balance checks
+ * - NO retry logic
+ * - NO delays
+ * - Generate QR in <100ms
+ * - Always succeed with valid KHQR format
+ */
 async function initiateSimulatedPayment(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
+  const startTime = Date.now();
   const ref = `SIM-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
-  const amount = args.currency === "KHR" ? (args.amountKhr ?? args.amountUsd * 4100) : args.amountUsd;
+  const isKhr = args.currency === "KHR";
+  const amount = isKhr ? (args.amountKhr ?? args.amountUsd * 4100) : args.amountUsd;
+  
+  // Generate KHQR-compliant QR code (valid format for testing)
+  const currencyCode = isKhr ? "116" : "840";
+  const amountFormatted = Number(amount).toFixed(2);
+  
+  // Build EMV-compliant KHQR data
+  let qrData = "";
+  qrData += "000201"; // Payload Format Indicator
+  qrData += "010212"; // Payment System Indicator (KHQR)
+  qrData += "2937";   // Merchant Account Information
+  qrData += "0016A000000623010111"; // National Payment Network (Bakong)
+  qrData += "01130066010000000";   // Merchant ID (test)
+  qrData += "52045999"; // Merchant Category Code
+  qrData += `5303${currencyCode}`; // Currency Code
+  qrData += `54${amountFormatted.length.toString().padStart(2, '0')}${amountFormatted}`; // Amount
+  qrData += "5802KH"; // Country Code
+  qrData += `5915${BAKONG_MERCHANT_NAME.padEnd(15, ' ').slice(0, 15)}`; // Merchant Name
+  qrData += `6010${BAKONG_MERCHANT_CITY.padEnd(10, ' ').slice(0, 10)}`; // City
+  qrData += "62070503***"; // Additional Data Field (test)
+  qrData += "62070103***"; // Reference label (test)
+  qrData += "6304"; // CRC placeholder
+  
+  // Calculate CRC16
+  const crc = crc16(qrData);
+  const simulatedQr = qrData.replace("6304", "6304" + crc);
+  
+  const md5String = crypto.createHash("md5").update(simulatedQr).digest("hex");
+  const qrStringEnc = encryptField(simulatedQr);
+  const processingTime = Date.now() - startTime;
+  
+  console.log("[payment] Simulation mode QR generated:", {
+    paymentRef: ref,
+    qrLength: simulatedQr.length,
+    processingTime: `${processingTime}ms`,
+    amount: amountFormatted,
+    currency: currencyCode,
+  });
 
   return {
     paymentRef: ref,
-    redirectUrl: `${BASE_URL}/api/payment/simulate?order=${args.orderNumber}&ref=${ref}&method=${args.method}`,
-    qrString: null,
-    qrStringEnc: null,
+    redirectUrl: `${BASE_URL}/checkout/${args.orderNumber}`,
+    qrString: simulatedQr,
+    qrStringEnc,
+    md5String,
     expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-    instructions: `[SIMULATION] Pay ${amount} ${args.currency} using ${args.method}`,
+    instructions: `[SIMULATION] Scan to pay ${amountFormatted} ${isKhr ? "KHR" : "USD"}`,
   };
 }
 
@@ -222,9 +249,7 @@ async function bakongApiRequest(endpoint: string, payload: unknown): Promise<any
 }
 
 export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerificationResult> {
-  // Simulation mode - pretend payment is always successful
   if (SIM_MODE) {
-    console.log("[bakong] SIMULATION: Pretending payment is PAID for", md5Hash);
     return {
       status: "PAID",
       paid: true,
@@ -235,88 +260,54 @@ export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerifi
     };
   }
 
-  if (!BAKONG_TOKEN) {
-    console.error("[bakong] FATAL: BAKONG_TOKEN not configured");
-    throw PaymentError.configurationError("Bakong");
-  }
+  if (!BAKONG_TOKEN) throw PaymentError.configurationError("Bakong");
 
   if (!md5Hash || md5Hash.length !== 32) {
-    console.error("[bakong] Invalid MD5 hash:", { md5Hash, length: md5Hash?.length });
     return { status: "FAILED", paid: false, message: `Invalid MD5 hash` };
   }
 
-  console.log("[bakong] ======= START CHECK =======");
-  console.log("[bakong] Checking payment with MD5:", md5Hash);
-  console.log("[bakong] MD5 length:", md5Hash.length);
-  console.log("[bakong] BAKONG_API_BASE:", process.env.BAKONG_API_BASE || "https://api-bakong.nbc.gov.kh");
-  console.log("[bakong] BAKONG_TOKEN exists:", !!BAKONG_TOKEN);
+  const maxRetries = 3;
+  let lastError: any = null;
 
-  try {
-    const payload = { md5: md5Hash };
-    console.log("[bakong] Sending request:", JSON.stringify(payload));
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await bakongApiRequest("/v1/check_transaction_by_md5", { md5: md5Hash });
+      const responseCode = result.responseCode ?? result.code ?? result.statusCode;
+      const data = result.data ?? result.result ?? result.transaction ?? result;
 
-    const result = await bakongApiRequest("/v1/check_transaction_by_md5", payload);
+      if (responseCode === 0 && data) {
+        const status = String(data.status ?? data.state ?? data.transactionStatus ?? "").toUpperCase();
+        const isPaid = status === "PAID" || status === "COMPLETED" || status === "SUCCESS" || data.paymentStatus === "PAID";
 
-    console.log("[bakong] Raw API response (full):", JSON.stringify(result, null, 2));
+        return {
+          status: isPaid ? "PAID" : "PENDING",
+          paid: isPaid,
+          paidAt: data.acknowledgedDateMs ? new Date(data.acknowledgedDateMs) : undefined,
+          transactionId: data.hash || data.transactionId || md5Hash,
+          amount: data.amount ? parseFloat(String(data.amount)) : undefined,
+          currency: data.currency || "USD",
+          rawResponse: result,
+        };
+      }
 
-    // Handle ALL possible response formats
-    const responseCode = result.responseCode ?? result.code ?? result.statusCode;
-    const data = result.data ?? result.result ?? result.transaction ?? result;
-
-    console.log("[bakong] Parsed responseCode:", responseCode);
-    console.log("[bakong] Parsed data object:", JSON.stringify(data));
-
-    // Check if transaction exists (responseCode 0 = success)
-    if (responseCode === 0 && data) {
-      const status = String(data.status ?? data.state ?? data.transactionStatus ?? "").toUpperCase();
-      const amount = data.amount ?? data.amountValue ?? data.paidAmount;
-      const currency = data.currency ?? "USD";
-      const transactionId = data.hash ?? data.transactionId ?? data.ref ?? md5Hash;
-      const paidAtMs = data.acknowledgedDateMs ?? data.acknowledgedDate ?? data.completedAt ?? data.transactionDate;
-
-      // Check ALL possible "paid" status strings
-      const isPaid = 
-        status === "PAID" || 
-        status === "COMPLETED" || 
-        status === "SETTLED" ||
-        status === "SUCCESS" ||
-        String(data.paid) === "true" ||
-        data.paymentStatus === "PAID";
-
-      console.log("[bakong] ======= FINAL DECISION =======");
-      console.log("[bakong] Status from API:", status);
-      console.log("[bakong] isPaid decision:", isPaid);
-      console.log("[bakong] Amount:", amount, "Currency:", currency);
-      console.log("[bakong] Transaction ID:", transactionId);
-
-      return {
-        status: isPaid ? "PAID" : "PENDING",
-        paid: isPaid,
-        paidAt: paidAtMs ? new Date(paidAtMs) : undefined,
-        transactionId,
-        amount: amount ? parseFloat(String(amount)) : undefined,
-        currency,
-        rawResponse: result, // Store full response for debugging
-      };
+      if (responseCode !== 0) {
+        if (attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+          continue;
+        }
+      }
+      
+      return { status: "PENDING", paid: false, rawResponse: result };
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+        continue;
+      }
     }
-
-    // Transaction not found or not paid yet
-    console.log("[bakong] ======= NOT PAID =======");
-    console.log("[bakong] responseCode:", responseCode, "(0 = success, other = error)");
-    console.log("[bakong] Has data?:", !!data);
-    if (data) {
-      console.log("[bakong] Data content:", JSON.stringify(data));
-    }
-    
-    return { status: "PENDING", paid: false, rawResponse: result };
-  } catch (err) {
-    console.error("[bakong] API request failed:", err);
-    return {
-      status: "FAILED",
-      paid: false,
-      message: err instanceof Error ? err.message : "Bakong API error",
-    };
   }
+
+  return { status: "FAILED", paid: false, message: lastError?.message || "Bakong API error" };
 }
 
 // ===================== Amount Validation =====================
@@ -328,20 +319,12 @@ export function validatePaymentAmount(
   currency: string
 ): { valid: boolean; message?: string } {
   const tolerance = 0.01;
-
   if (currency === "KHR") {
-    if (typeof expectedKhr !== "number") {
-      return { valid: false, message: "KHR amount not set" };
-    }
-    if (Math.abs(paidAmount - expectedKhr) > tolerance) {
-      return { valid: false, message: `Amount mismatch: expected ${expectedKhr} KHR, got ${paidAmount} KHR` };
-    }
+    if (typeof expectedKhr !== "number") return { valid: false, message: "KHR amount not set" };
+    if (Math.abs(paidAmount - expectedKhr) > tolerance) return { valid: false, message: `Expected ${expectedKhr} KHR, got ${paidAmount} KHR` };
   } else {
-    if (Math.abs(paidAmount - expectedUsd) > tolerance) {
-      return { valid: false, message: `Amount mismatch: expected ${expectedUsd} USD, got ${paidAmount} USD` };
-    }
+    if (Math.abs(paidAmount - expectedUsd) > tolerance) return { valid: false, message: `Expected ${expectedUsd} USD, got ${paidAmount} USD` };
   }
-
   return { valid: true };
 }
 
@@ -358,62 +341,33 @@ async function logPaymentEvent(entry: {
   details?: unknown;
 }) {
   try {
-    await logSecurityEvent("PAYMENT_EVENT", {
-      orderNumber: entry.orderNumber,
-      paymentRef: entry.paymentRef,
-      event: entry.event,
-      provider: entry.provider,
-      amount: entry.amount,
-      currency: entry.currency,
-      status: entry.status,
-      ...(typeof entry.details === "object" && entry.details ? entry.details : {}),
-    }, {} as any);
-  } catch {
-    // Don't let logging failures break payment flow
-  }
+    await logSecurityEvent("PAYMENT_EVENT", entry, {} as any);
+  } catch {}
 }
 
-// ============================================================================
-// DISTRIBUTED LOCKING (DB-level optimistic locks)
-// Prevents webhook, verify, and cron from processing the same order concurrently
-// ============================================================================
+// ===================== DISTRIBUTED LOCKING (Hardened) =====================
 
 /**
- * Acquire an optimistic lock on an order.
+ * Acquire an optimistic lock on an order with a fencing token (version).
  * Returns the order if lock acquired, null if already locked.
- * 
- * Lock semantics:
- * - If lockUntil < now(), lock is expired and can be stolen
- * - If lockedBy matches, lock is held by caller (re-entrant)
- * - Otherwise, lock is held by another process
  */
 export async function acquireOrderLock(
   orderId: string,
   lockedBy: string,
   durationMs: number = LOCK_DURATION_MS
 ): Promise<{ locked: boolean; order?: any }> {
-  const now = new Date();
-  const lockExpiry = new Date(now.getTime() + durationMs);
+  // ATOMIC LOCK ACQUISITION USING DB-SIDE NOW() AND VERSION INCREMENT
+  // This prevents clock drift issues and provides a fencing token for side effects.
+  const result = await prisma.$executeRaw`
+    UPDATE "Order"
+    SET "lockUntil" = NOW() + ${durationMs / 1000} * INTERVAL '1 second',
+        "lockedBy" = ${lockedBy},
+        "version" = "version" + 1
+    WHERE "id" = ${orderId}
+      AND ("lockUntil" IS NULL OR "lockUntil" < NOW() OR "lockedBy" = ${lockedBy})
+  `;
 
-  // Try to acquire: either no lock exists, or lock is expired, or we already hold it
-  const result = await prisma.order.updateMany({
-    where: {
-      id: orderId,
-      OR: [
-        { lockUntil: null }, // No lock
-        { lockUntil: { lt: now } }, // Expired lock
-        { lockedBy }, // We already hold it
-      ],
-    },
-    data: {
-      lockUntil: lockExpiry,
-      lockedBy,
-    },
-  });
-
-  if (result.count === 0) {
-    return { locked: false };
-  }
+  if (result === 0) return { locked: false };
 
   const order = await prisma.order.findUnique({
     where: { id: orderId },
@@ -423,608 +377,694 @@ export async function acquireOrderLock(
   return { locked: true, order };
 }
 
-/**
- * Release a lock on an order.
- * Only releases if the caller holds the lock.
- */
 export async function releaseOrderLock(orderId: string, lockedBy: string): Promise<void> {
   await prisma.order.updateMany({
-    where: {
-      id: orderId,
-      lockedBy,
-    },
-    data: {
-      lockUntil: null,
-      lockedBy: null,
-    },
+    where: { id: orderId, lockedBy },
+    data: { lockUntil: null, lockedBy: null },
   });
 }
 
-/**
- * Extend a lock by a given duration.
- * Used for long-running operations like delivery.
- */
-export async function extendOrderLock(
-  orderId: string,
-  lockedBy: string,
-  additionalMs: number
-): Promise<boolean> {
-  const newExpiry = new Date(Date.now() + additionalMs);
+// ===================== PAYMENT FINALIZATION =====================
 
-  const result = await prisma.order.updateMany({
-    where: {
-      id: orderId,
-      lockedBy,
-    },
-    data: {
-      lockUntil: newExpiry,
-    },
-  });
-
-  return result.count > 0;
-}
-
-// ============================================================================
-// PAYMENT VERIFICATION (Webhook + Polling)
-// ONLY updates order to PAID. Never triggers delivery directly.
-// ============================================================================
-
-/**
- * Mark order as PAID after payment confirmation.
- * This is the SINGLE SOURCE OF TRUTH - ONLY function that transitions PENDING → PAID.
- * 
- * Called by:
- * - Webhook handler (primary)
- * - Verify endpoint (secondary, when polling detects payment)
- * - Cron reconciliation (recovery for missed events)
- * 
- * After marking PAID, it enqueues a delivery job (does NOT execute delivery).
- * 
- * STRICT STATE MACHINE:
- * PENDING → PAID → QUEUED → DELIVERING → DELIVERED
- * Rejects: PAID → PAID (idempotent), DELIVERED → PAID (invalid)
- */
 export async function markOrderPaid(orderId: string, paymentData: {
   paymentRef: string;
   amount: number;
   currency: string;
   transactionId?: string;
   verifiedBy: "webhook" | "verify" | "cron" | "polling";
+  rawResponse?: any;
 }): Promise<{ success: boolean; status: string; message?: string }> {
-  const processorId = `payment_${paymentData.verifiedBy}_${Date.now()}`;
+  // 1. COLLISION-FREE PROCESSOR ID
+  const processorId = `pay_${paymentData.verifiedBy}_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
 
-  // Acquire lock (prevents race conditions)
   const lock = await acquireOrderLock(orderId, processorId);
   if (!lock.locked || !lock.order) {
-    return { success: false, status: "LOCKED", message: "Order is being processed by another request" };
+    return { success: false, status: "LOCKED", message: "Concurrent process holding lock" };
   }
 
   const order = lock.order;
+  const idempotencyKey = order.orderNumber;
 
-  // STRICT STATE MACHINE: Only allow PENDING → PAID
-  const allowedTransitions: Record<string, string[]> = {
-    "PENDING": ["PAID"],
-    // Any other state = reject (idempotent for completed, invalid for others)
-  };
-
-  if (order.status !== "PENDING") {
-    // Idempotency check: already in a post-PAID state
-    const completedStates = ["PAID", "QUEUED", "DELIVERING", "DELIVERED"];
-    if (completedStates.includes(order.status)) {
-      await releaseOrderLock(orderId, processorId);
-      console.log(`[payment] Idempotent: order ${order.orderNumber} already ${order.status}`);
-      return { success: true, status: order.status, message: "Order already processed" };
-    }
-    
-    // Invalid transition attempt
+  // 2. STATE GUARD
+  const successfulStates = ["PAID", "QUEUED", "DELIVERING", "DELIVERED", "SUCCESS"];
+  if (successfulStates.includes(order.status) || order.idempotencyKey === idempotencyKey) {
     await releaseOrderLock(orderId, processorId);
-    console.error(`[payment] Invalid state transition: ${order.status} → PAID`);
-    return { success: false, status: order.status, message: `Invalid transition from ${order.status}` };
+    return { success: true, status: order.status };
+  }
+
+  const overridableStates = ["PENDING", "EXPIRED", "FAILED", "FAILED_RETRY"];
+  if (!overridableStates.includes(order.status)) {
+    await releaseOrderLock(orderId, processorId);
+    return { success: false, status: order.status };
   }
 
   try {
-    // Atomic transition: PENDING → PAID + enqueue delivery job
-    const updateResult = await prisma.order.updateMany({
-      where: {
-        id: orderId,
-        status: "PENDING",
-        lockedBy: processorId,
-      },
-      data: {
-        status: "PAID",
-        paidAt: new Date(),
-        paymentRef: paymentData.paymentRef,
-        paymentRefEnc: encryptField(paymentData.paymentRef),
-      },
-    });
-
-    if (updateResult.count === 0) {
-      // Order was not PENDING - check current state
-      const currentOrder = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: { status: true },
+    const result = await prisma.$transaction(async (tx) => {
+      // 3. ATOMIC CAS UPDATE with version check
+      const updateResult = await tx.order.updateMany({
+        where: { 
+          id: orderId, 
+          status: { in: overridableStates }, 
+          idempotencyKey: null,
+          version: order.version // Fencing check
+        },
+        data: {
+          status: "PAID",
+          paidAt: new Date(),
+          paymentRef: paymentData.paymentRef,
+          paymentRefEnc: encryptField(paymentData.paymentRef),
+          idempotencyKey,
+          version: { increment: 1 }
+        },
       });
-      await releaseOrderLock(orderId, processorId);
-      return {
-        success: false,
-        status: currentOrder?.status || "UNKNOWN",
-        message: "Order is no longer in PENDING state",
+
+      if (updateResult.count === 0) throw new Error("ALREADY_PROCESSED");
+
+      // 4. PAYLOAD-BOUND IDEMPOTENCY KEY
+      // Format: TOPUP-{orderNumber}-{payloadHash prefix}
+      const deliveryPayload = {
+        playerUid: order.playerUid,
+        serverId: order.serverId,
+        amount: order.amountUsd,
       };
-    }
+      const externalKey = generateIdempotencyKey(order.orderNumber, deliveryPayload);
 
-    // Enqueue delivery job (does NOT execute delivery)
-    await prisma.deliveryJob.create({
-      data: {
-        orderId,
-        status: "PENDING",
-        maxAttempts: order.maxDeliveryAttempts,
-        nextAttemptAt: new Date(), // Process immediately
-      },
-    });
+      // 5. CREATE DELIVERY JOB + LEDGER ENTRY ATOMICALLY
+      const deliveryJob = await tx.deliveryJob.create({
+        data: {
+          orderId,
+          status: "PENDING",
+          maxAttempts: order.maxDeliveryAttempts,
+          nextAttemptAt: new Date(),
+          externalIdempotencyKey: externalKey,
+        },
+      });
 
-    // Update order status to QUEUED
-    await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: "QUEUED",
-        deliveryStatus: "QUEUED",
-      },
-    });
+      // Create ledger entry (write-ahead log)
+      await tx.providerLedger.create({
+        data: {
+          deliveryJobId: deliveryJob.id,
+          provider: order.product.gameDropOfferId ? 'GAMEDROP' : (order.product.g2bulkCatalogueName ? 'G2BULK' : 'MANUAL'),
+          idempotencyKey: externalKey,
+          payloadHash: generatePayloadHash(deliveryPayload),
+          requestPayload: deliveryPayload,
+          externalState: 'UNKNOWN',
+        },
+      });
 
-    await logPaymentEvent({
-      orderNumber: order.orderNumber,
-      paymentRef: paymentData.paymentRef,
-      event: "payment_verified",
-      provider: "BAKONG",
-      amount: paymentData.amount,
-      currency: paymentData.currency,
-      status: "PAID",
-      details: { transactionId: paymentData.transactionId, verifiedBy: paymentData.verifiedBy },
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: { 
+          status: "QUEUED", 
+          deliveryStatus: "QUEUED",
+          version: { increment: 1 }
+        },
+      });
+
+      return { status: updated.status };
     });
 
     await releaseOrderLock(orderId, processorId);
-
-    return {
-      success: true,
-      status: "QUEUED",
-      message: "Payment verified, delivery queued",
-    };
+    return { success: true, status: result.status };
   } catch (err) {
     await releaseOrderLock(orderId, processorId);
-    return {
-      success: false,
-      status: "FAILED",
-      message: err instanceof Error ? err.message : "Failed to mark order paid",
-    };
+    if (err.message === "ALREADY_PROCESSED") return { success: true, status: "PAID" };
+    return { success: false, status: "ERROR" };
   }
 }
 
+// ===================== DELIVERY WORKER (HARDENED) =====================
+
 /**
- * READ-ONLY payment status check.
- * Does NOT mutate order state.
- * Used by polling to check if payment is confirmed.
+ * PRE-FLIGHT LEASE VALIDATION
+ * Must be called BEFORE any provider API call
+ * Prevents zombie worker duplicate dispatch after partition/GC
  */
-export async function checkPaymentStatus(orderId: string): Promise<{
-  status: string;
-  isPaid: boolean;
-  bakongStatus?: string;
-  message?: string;
-}> {
-  const order = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: {
-      status: true,
-      deliveryStatus: true,
-      metadata: true,
-      orderNumber: true,
-      paymentRef: true,
-      amountUsd: true,
-      amountKhr: true,
-      currency: true,
-    },
+async function validateExecutionLease(
+  tx: any,
+  jobId: string,
+  workerId: string
+): Promise<{ valid: boolean; reason?: string }> {
+  const job = await tx.deliveryJob.findUnique({
+    where: { id: jobId },
+    select: { workerId: true, lockUntil: true, status: true },
   });
 
-  if (!order) {
-    return { status: "NOT_FOUND", isPaid: false, message: "Order not found" };
+  if (!job) {
+    return { valid: false, reason: 'JOB_NOT_FOUND' };
   }
 
-  // Already in a confirmed state
-  if (order.status === "PAID" || order.status === "QUEUED" || order.status === "DELIVERING" || order.status === "DELIVERED") {
-    return { status: order.status, isPaid: true };
+  if (job.workerId !== workerId) {
+    return { valid: false, reason: 'WORKER_ID_MISMATCH' };
   }
 
-  // Terminal state
-  if (order.status === "FAILED" || order.status === "CANCELLED") {
-    return { status: order.status, isPaid: false };
+  // Use DB's NOW() for clock-drift immunity
+  const isLocked = await tx.$queryRaw`
+    SELECT "lockUntil" > NOW() as "isLocked"
+    FROM "DeliveryJob"
+    WHERE "id" = ${jobId}
+  `;
+
+  if (!isLocked[0]?.isLocked) {
+    return { valid: false, reason: 'LOCK_EXPIRED' };
   }
 
-  // PENDING - check Bakong API
-  const md5Hash = (order as any).metadata?.bakongMd5;
-  if (!md5Hash) {
-    return { status: "PENDING", isPaid: false, message: "No MD5 hash found" };
-  }
-
-  try {
-    const bakongResult = await checkBakongPayment(md5Hash);
-    return {
-      status: bakongResult.status,
-      isPaid: bakongResult.paid,
-      bakongStatus: bakongResult.rawResponse ? String((bakongResult.rawResponse as any).status) : undefined,
-    };
-  } catch {
-    return { status: "PENDING", isPaid: false, message: "Bakong API error" };
-  }
+  return { valid: true };
 }
 
-// ============================================================================
-// DELIVERY QUEUE WORKER
-// Processes delivery jobs asynchronously. Never called from request handlers.
-// ============================================================================
-
 /**
- * Process pending delivery jobs from the queue.
- * Called by:
- * - Cron job (recovery, every 5 minutes)
- * - Manual trigger (admin panel)
- * 
- * This is the ONLY place where delivery is executed.
- * 
- * DELIVERY SAFETY: Ensures delivery runs only ONCE per order.
- * Guard: if deliveryStatus === "DELIVERED" → skip immediately.
+ * SAFE RETRY DECISION
+ * Returns true only if retry is safe (not ambiguous, not already succeeded)
  */
+function isRetrySafe(job: any, providerResponse: any): boolean {
+  // NEVER retry UNKNOWN states - must go through reconciler
+  if (job.status === 'UNKNOWN_EXTERNAL_STATE') {
+    return false;
+  }
+
+  // NEVER retry MANUAL_REVIEW - requires human intervention
+  if (job.status === 'MANUAL_REVIEW') {
+    return false;
+  }
+
+  // NEVER retry if already dispatched without response (ambiguous)
+  if (job.status === 'DISPATCHED' && !providerResponse) {
+    return false;
+  }
+
+  // 409 idempotency conflict = POSSIBLE SUCCESS, not failure
+  if (providerResponse?.errorCode === 'IDEMPOTENCY_CONFLICT') {
+    return false; // Treat as ambiguous, not retryable failure
+  }
+
+  // Only retry explicit failures with confirmed provider response
+  if (job.status === 'FAILED' && providerResponse?.confirmedFailure === true) {
+    return (job.attempt || 0) + 1 < job.maxAttempts;
+  }
+
+  return false;
+}
+
 export async function processDeliveryQueue(limit: number = 20): Promise<{
   processed: number;
   succeeded: number;
   failed: number;
   skipped: number;
+  unknown: number;
+  circuitBlocked: number;
 }> {
-  const workerId = `worker_${Date.now()}`;
+  const workerId = `worker_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+  const results = { 
+    processed: 0, 
+    succeeded: 0, 
+    failed: 0, 
+    skipped: 0, 
+    unknown: 0,
+    circuitBlocked: 0,
+  };
 
-  // Fetch pending jobs that are ready to process
-  const jobs = await prisma.deliveryJob.findMany({
-    where: {
-      status: "PENDING",
-      nextAttemptAt: { lte: new Date() },
-    },
-    take: limit,
-    orderBy: { attemptNumber: "asc" },
-    include: { order: { include: { game: true, product: true } } },
-  });
-
-  if (jobs.length === 0) {
-    return { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
+  // Check backpressure - pause dispatches if needed
+  if (!canDispatchNewJobs()) {
+    console.warn('[worker] Backpressure: dispatches paused');
+    return results;
   }
 
-  const results = { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
+  // Check if retries are allowed
+  if (!canRetryJobs()) {
+    console.warn('[worker] Backpressure: retries paused');
+    // Still process new jobs, just don't retry failures
+  }
+
+  // Respect concurrency limit (backpressure)
+  const concurrencyLimit = getWorkerConcurrencyLimit();
+  const effectiveLimit = Math.min(limit, concurrencyLimit);
+
+  // 1. RECOVER STUCK with fencing reset
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+  await prisma.deliveryJob.updateMany({
+    where: { 
+      status: { in: ['PROCESSING', 'DISPATCHED'] }, 
+      startedAt: { lt: tenMinutesAgo } 
+    },
+    data: { 
+      status: 'UNKNOWN_EXTERNAL_STATE', 
+      nextAttemptAt: new Date(), 
+      workerId: null 
+    },
+  });
+
+  // 2. ATOMIC CLAIM (Fencing: workerId + startedAt)
+  // Only claim PENDING or RETRYING jobs (not UNKNOWN states)
+  const claimResult = await prisma.deliveryJob.updateMany({
+    where: { 
+      status: { in: ["PENDING", "RETRYING"] }, 
+      nextAttemptAt: { lte: new Date() } 
+    },
+    data: { status: "PROCESSING", startedAt: new Date(), workerId },
+  });
+
+  if (claimResult.count === 0) return results;
+
+  const jobs = await prisma.deliveryJob.findMany({
+    where: { status: "PROCESSING", workerId },
+    take: effectiveLimit,
+    include: { 
+      order: { include: { game: true, product: true } },
+      providerLedger: true,
+    },
+  });
 
   for (const job of jobs) {
-      // DELIVERY SAFETY: Check if already delivered (idempotent)
-      if (job.order.deliveryStatus === "DELIVERED" || job.order.status === "DELIVERED") {
-        console.log(`[delivery] Order ${job.order.orderNumber} already delivered - skipping`);
-        await prisma.deliveryJob.update({
-          where: { id: job.id },
-          data: { status: "COMPLETED", completedAt: new Date() },
-        });
-        results.skipped++;
-        continue;
-      }
-
-      // Acquire order lock
-      const orderLock = await acquireOrderLock(job.orderId, workerId);
-      if (!orderLock.locked) {
-        results.skipped++;
-        continue;
-      }
-
-    try {
-      // Update job to PROCESSING
+    const lock = await acquireOrderLock(job.orderId, workerId, DELIVERY_LOCK_DURATION_MS);
+    if (!lock.locked) {
       await prisma.deliveryJob.update({
         where: { id: job.id },
-        data: {
-          status: "PROCESSING",
-          attempt: { increment: 1 },
-          startedAt: new Date(),
-        },
+        data: { status: 'RETRYING', workerId: null, nextAttemptAt: new Date(Date.now() + 60000) },
+      });
+      continue;
+    }
+
+    const order = lock.order;
+
+    try {
+      // Check if already delivered (idempotency)
+      if (order.status === "DELIVERED") {
+        await prisma.$transaction([
+          prisma.deliveryJob.update({ 
+            where: { id: job.id },
+            data: { status: "SUCCESS" } 
+          }),
+          job.providerLedgerId ? 
+            prisma.providerLedger.update({
+              where: { id: job.providerLedgerId },
+              data: { externalState: 'SUCCESS' },
+            }) : prisma.$executeRaw`SELECT 1`,
+        ]);
+        results.succeeded++;
+        continue;
+      }
+
+      // PRE-FLIGHT LEASE VALIDATION (critical for zombie prevention)
+      const leaseCheck = await prisma.$transaction(async (tx) => {
+        return await validateExecutionLease(tx, job.id, workerId);
       });
 
-      // Update order status
-      await prisma.order.update({
-        where: { id: job.orderId },
-        data: {
-          status: "DELIVERING",
-          deliveryStatus: "DELIVERING",
-        },
-      });
-
-      // Execute delivery
-      const deliveryResult = await executeDeliveryForJob(job);
-
-      if (deliveryResult.success) {
-        // Success
+      if (!leaseCheck.valid) {
+        console.warn(`[worker] Lease validation failed for job ${job.id}: ${leaseCheck.reason}`);
         await prisma.deliveryJob.update({
           where: { id: job.id },
-          data: {
-            status: "COMPLETED",
-            completedAt: new Date(),
-            providerResponse: deliveryResult.response || null,
-          },
+          data: { status: 'RETRYING', workerId: null, nextAttemptAt: new Date() },
         });
+        continue;
+      }
 
-        await prisma.order.update({
-          where: { id: job.orderId },
-          data: {
-            status: "DELIVERED",
-            deliveryStatus: "DELIVERED",
-            deliveredAt: new Date(),
-            deliveryNote: deliveryResult.message,
-            metadata: {
-              ...(job.order as any).metadata || {},
-              deliveryTransactionId: deliveryResult.transactionId,
-              deliveryProvider: deliveryResult.provider,
-            },
-          },
-        });
-
-        results.succeeded++;
-      } else {
-        // Failed - schedule retry or mark as final failure
-        const currentAttempt = job.attempt + 1;
-
-        if (currentAttempt >= job.maxAttempts) {
-          // Max attempts reached - final failure
+      // CIRCUIT BREAKER CHECK
+      const provider = order.product.gameDropOfferId ? 'GAMEDROP' : (order.product.g2bulkCatalogueName ? 'G2BULK' : null);
+      if (provider) {
+        const circuitCheck = await isRequestAllowed(provider);
+        if (!circuitCheck.allowed) {
+          console.warn(`[worker] Circuit breaker OPEN for ${provider}: ${circuitCheck.reason}`);
+          results.circuitBlocked++;
+          
+          // Move to UNKNOWN instead of failing
           await prisma.deliveryJob.update({
             where: { id: job.id },
-            data: {
-              status: "FAILED",
-              errorMessage: deliveryResult.message,
-              providerResponse: deliveryResult.response || null,
+            data: { 
+              status: 'UNKNOWN_EXTERNAL_STATE',
+              workerId: null,
+              errorMessage: `Circuit breaker: ${circuitCheck.reason}`,
+              nextAttemptAt: circuitCheck.nextRetryTime || new Date(Date.now() + 300000),
             },
           });
-
-          await prisma.order.update({
-            where: { id: job.orderId },
-            data: {
-              status: "FAILED_FINAL",
-              deliveryStatus: "FAILED_FINAL",
-              failureReason: `Delivery failed after ${currentAttempt} attempts: ${deliveryResult.message}`,
-            },
-          });
-        } else {
-          // Schedule retry with exponential backoff
-          const backoffMs = Math.pow(2, currentAttempt) * 5 * 60 * 1000; // 5min, 10min, 20min
-          const nextAttemptAt = new Date(Date.now() + backoffMs);
-
-          await prisma.deliveryJob.update({
-            where: { id: job.id },
-            data: {
-              status: "RETRYING",
-              nextAttemptAt,
-              errorMessage: deliveryResult.message,
-              providerResponse: deliveryResult.response || null,
-            },
-          });
-
-          await prisma.order.update({
-            where: { id: job.orderId },
-            data: {
-              status: "FAILED_RETRY",
-              deliveryStatus: "FAILED_RETRY",
-              nextDeliveryAt: nextAttemptAt,
-              deliveryNote: `Attempt ${currentAttempt} failed: ${deliveryResult.message}`,
-            },
-          });
+          continue;
         }
 
+        // Check provider health
+        const healthCheck = await getProviderStatus(provider);
+        if (!healthCheck.allowRequests) {
+          console.warn(`[worker] Provider unhealthy ${provider}: ${healthCheck.reason}`);
+          results.circuitBlocked++;
+          continue;
+        }
+      }
+
+      // Verify payload hasn't drifted (admin edit detection)
+      const requestPayload = {
+        playerUid: order.playerUid,
+        serverId: order.serverId,
+        amount: order.amountUsd,
+      };
+
+      if (job.providerLedger?.payloadHash) {
+        const payloadValid = verifyPayloadHash(job.providerLedger.payloadHash, requestPayload);
+        if (!payloadValid) {
+          console.warn(`[worker] Payload drift detected for job ${job.id}`);
+          await prisma.$transaction(async (tx) => {
+            await createManualReview(tx, job.id, 'PAYLOAD_DRIFT_DETECTED', 'HIGH');
+            if (job.providerLedgerId) {
+              await markLedgerAmbiguous(tx, job.providerLedgerId, 'Payload changed after dispatch');
+            }
+          });
+          results.unknown++;
+          continue;
+        }
+      }
+
+      // 3. CREATE LEDGER ENTRY BEFORE DISPATCH (Write-Ahead Log)
+      let ledgerEntry = job.providerLedger;
+      if (!ledgerEntry) {
+        await prisma.$transaction(async (tx) => {
+          ledgerEntry = await createLedgerEntry(
+            tx,
+            job.id,
+            provider as any,
+            job.externalIdempotencyKey,
+            requestPayload,
+            workerId
+          );
+        });
+      }
+
+      // 4. EXECUTE DELIVERY (with crash handling and circuit breaker)
+      const deliveryResult = await executeDeliveryForJob(job, ledgerEntry, provider);
+
+      // Record provider call metrics
+      if (provider) {
+        await recordProviderCall(provider, {
+          success: deliveryResult.success,
+          timeout: deliveryResult.errorCode === 'TIMEOUT',
+          conflict: deliveryResult.errorCode === 'IDEMPOTENCY_CONFLICT',
+          latencyMs: deliveryResult.latencyMs || 0,
+          errorMessage: deliveryResult.message,
+        });
+
+        if (deliveryResult.success) {
+          await recordCircuitSuccess(provider);
+        } else if (deliveryResult.errorCode === 'TIMEOUT' || deliveryResult.errorCode === 'NETWORK_ERROR') {
+          await recordCircuitFailure(provider, deliveryResult.message, true);
+        } else {
+          await recordCircuitFailure(provider, deliveryResult.message);
+        }
+      }
+
+      // 5. HANDLE RESULT
+      if (deliveryResult.success) {
+        // SUCCESS: Atomic commit of status + response
+        await prisma.$transaction([
+          prisma.deliveryJob.update({
+            where: { id: job.id, workerId }, // FENCING
+            data: { 
+              status: "SUCCESS", 
+              completedAt: new Date(), 
+              providerResponse: deliveryResult.response 
+            },
+          }),
+          prisma.providerLedger.update({
+            where: { id: ledgerEntry.id },
+            data: {
+              externalState: 'SUCCESS',
+              providerTransactionId: deliveryResult.transactionId,
+              providerResponse: deliveryResult.response,
+              resolvedAt: new Date(),
+              resolvedBy: workerId,
+              resolutionSource: 'API_RESPONSE',
+            },
+          }),
+          prisma.order.update({
+            where: { id: job.orderId },
+            data: { 
+              status: "DELIVERED", 
+              deliveryStatus: "DELIVERED",
+              deliveredAt: new Date(),
+              version: { increment: 1 }
+            },
+          }),
+        ]);
+        results.succeeded++;
+      } else if (deliveryResult.errorCode === 'TIMEOUT' || deliveryResult.errorCode === 'NETWORK_ERROR') {
+        // TIMEOUT/NETWORK = AMBIGUOUS, not failure
+        await prisma.$transaction([
+          prisma.deliveryJob.update({
+            where: { id: job.id },
+            data: { 
+              status: "UNKNOWN_EXTERNAL_STATE",
+              workerId: null,
+              errorMessage: deliveryResult.message,
+            },
+          }),
+          prisma.providerLedger.update({
+            where: { id: ledgerEntry.id },
+            data: {
+              externalState: 'AMBIGUOUS',
+            },
+          }),
+        ]);
+        results.unknown++;
+      } else if (deliveryResult.errorCode === 'IDEMPOTENCY_CONFLICT') {
+        // 409 = POSSIBLE SUCCESS, treat as ambiguous
+        await prisma.$transaction([
+          prisma.deliveryJob.update({
+            where: { id: job.id },
+            data: { 
+              status: "UNKNOWN_EXTERNAL_STATE",
+              workerId: null,
+              errorMessage: "Idempotency conflict - may have succeeded",
+            },
+          }),
+          prisma.providerLedger.update({
+            where: { id: ledgerEntry.id },
+            data: {
+              externalState: 'AMBIGUOUS',
+            },
+          }),
+        ]);
+        results.unknown++;
+      } else {
+        // Explicit failure (provider confirmed failure)
+        const retry = canRetryJobs() && (job.attempt || 0) + 1 < job.maxAttempts;
+        await prisma.$transaction([
+          prisma.deliveryJob.update({
+            where: { id: job.id, workerId },
+            data: { 
+              status: retry ? "RETRYING" : "FAILED", 
+              attempt: { increment: 1 }, 
+              nextAttemptAt: retry ? new Date(Date.now() + 300000) : null,
+              workerId: null,
+              errorMessage: deliveryResult.message,
+            },
+          }),
+          prisma.providerLedger.update({
+            where: { id: ledgerEntry.id },
+            data: {
+              externalState: 'FAILED',
+              providerResponse: deliveryResult.response,
+              resolvedAt: new Date(),
+              resolutionSource: 'API_RESPONSE',
+            },
+          }),
+        ]);
         results.failed++;
       }
     } catch (err) {
-      // Unexpected error - reset job for retry
-      const errorMessage = err instanceof Error ? err.message : "Unknown error";
-      
-      await prisma.deliveryJob.update({
-        where: { id: job.id },
-        data: {
-          status: "PENDING",
-          nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000),
-          errorMessage,
-        },
+      console.error(`[worker] Unexpected error for job ${job.id}:`, err);
+      // Unexpected error = ambiguous state
+      await prisma.$transaction(async (tx) => {
+        await tx.deliveryJob.update({
+          where: { id: job.id },
+          data: { 
+            status: "UNKNOWN_EXTERNAL_STATE",
+            workerId: null,
+            errorMessage: err.message,
+          },
+        });
+        if (ledgerEntry?.id) {
+          await markLedgerAmbiguous(tx, ledgerEntry.id, err.message);
+        }
       });
-      
-      await prisma.order.update({
-        where: { id: job.orderId },
-        data: {
-          status: "QUEUED",
-          deliveryStatus: "QUEUED",
-        },
-      });
-      
-      results.failed++;
+      results.unknown++;
     } finally {
       await releaseOrderLock(job.orderId, workerId);
     }
-  } // End of for loop
-
+  }
   return results;
 }
 
-/**
- * Reconcile orders that are stuck in PENDING but may have been paid.
- * Called by cron as a safety net.
- */
-
-async function executeDeliveryForJob(job: any): Promise<{
+async function executeDeliveryForJob(
+  job: any, 
+  ledgerEntry: any,
+  provider?: string
+): Promise<{
   success: boolean;
   message: string;
   transactionId?: string;
   provider?: string;
   response?: string;
+  errorCode?: 'TIMEOUT' | 'NETWORK_ERROR' | 'IDEMPOTENCY_CONFLICT' | 'PROVIDER_ERROR';
+  latencyMs?: number;
 }> {
   const order = job.order;
-  const { product, playerUid, serverId, customerEmail } = order;
-  const idempotencyKey = `DELIVERY-${order.orderNumber}-${job.attempt + 1}`;
+  const idempotencyKey = job.externalIdempotencyKey;
+  const startTime = Date.now();
+
+  if (!idempotencyKey) {
+    return { 
+      success: false, 
+      message: "Missing external idempotency key",
+      errorCode: 'PROVIDER_ERROR',
+      latencyMs: Date.now() - startTime,
+    };
+  }
 
   try {
-    if (product.gameDropOfferId) {
+    if (order.product.gameDropOfferId) {
       const result = await createGameDropOrder(
-        GAMEDROP_TOKEN,
-        product.gameDropOfferId,
-        playerUid,
-        serverId || undefined,
-        idempotencyKey,
-        customerEmail || undefined
-      );
-
-      const success = result.status === "SUCCESS" || result.status === "PENDING";
-      return {
-        success,
-        message: result.message || result.status,
-        transactionId: result.transactionId,
-        provider: "GAMEDROP",
-        response: JSON.stringify(result),
-      };
-    } else if (product.g2bulkCatalogueName) {
-      const result = await createG2BulkOrder(
-        G2BULK_TOKEN,
-        product.g2bulkCatalogueName,
-        playerUid,
-        serverId || undefined,
+        GAMEDROP_TOKEN, 
+        order.product.gameDropOfferId, 
+        order.playerUid, 
+        order.serverId, 
         idempotencyKey
       );
-
+      
+      if (result.status === "SUCCESS" || result.status === "PENDING") {
+        return { 
+          success: true, 
+          message: result.message || "Delivery successful",
+          transactionId: result.transactionId,
+          provider: 'GAMEDROP',
+          response: JSON.stringify(result),
+          latencyMs: Date.now() - startTime,
+        };
+      } else {
+        return {
+          success: false,
+          message: result.message || "GameDrop delivery failed",
+          errorCode: 'PROVIDER_ERROR',
+          response: JSON.stringify(result),
+          latencyMs: Date.now() - startTime,
+        };
+      }
+    } else if (order.product.g2bulkCatalogueName) {
+      const result = await createG2BulkOrder(
+        G2BULK_TOKEN, 
+        order.product.g2bulkCatalogueName, 
+        order.playerUid, 
+        order.serverId, 
+        idempotencyKey
+      );
+      
+      if (result.success) {
+        return { 
+          success: true, 
+          message: result.message || "Delivery successful",
+          transactionId: result.orderId?.toString(),
+          provider: 'G2BULK',
+          response: JSON.stringify(result),
+          latencyMs: Date.now() - startTime,
+        };
+      } else {
+        return {
+          success: false,
+          message: result.message || "G2Bulk delivery failed",
+          errorCode: 'PROVIDER_ERROR',
+          response: JSON.stringify(result),
+          latencyMs: Date.now() - startTime,
+        };
+      }
+    }
+    return { 
+      success: true, 
+      message: "Manual fulfillment",
+      latencyMs: Date.now() - startTime,
+    };
+  } catch (err) {
+    const latencyMs = Date.now() - startTime;
+    
+    // Timeout or network error = AMBIGUOUS
+    if (err.name === 'AbortError' || err.message.includes('timeout')) {
       return {
-        success: result.success,
-        message: result.message || (result.success ? "Order created" : "Order failed"),
-        transactionId: result.orderId?.toString(),
-        provider: "G2BULK",
-        response: JSON.stringify(result),
-      };
-    } else {
-      return {
-        success: true,
-        message: "Manual fulfillment required",
-        provider: "MANUAL",
+        success: false,
+        message: `Provider timeout: ${err.message}`,
+        errorCode: 'TIMEOUT',
+        latencyMs,
       };
     }
-  } catch (err) {
-    return {
-      success: false,
-      message: err instanceof Error ? err.message : "Delivery execution error",
+    if (err.message.includes('network') || err.message.includes('fetch')) {
+      return {
+        success: false,
+        message: `Network error: ${err.message}`,
+        errorCode: 'NETWORK_ERROR',
+        latencyMs,
+      };
+    }
+    // Check for idempotency conflict (409)
+    if (err.statusCode === 409 || err.message.includes('duplicate') || err.message.includes('idempotency')) {
+      return {
+        success: false,
+        message: `Idempotency conflict: ${err.message}`,
+        errorCode: 'IDEMPOTENCY_CONFLICT',
+        latencyMs,
+      };
+    }
+    return { 
+      success: false, 
+      message: err.message,
+      errorCode: 'PROVIDER_ERROR',
+      latencyMs,
     };
   }
 }
 
-// ============================================================================
-// RECONCILIATION JOB
-// Checks for missed payments that webhook/polling failed to detect
-// ============================================================================
+// ===================== RECONCILER (Atomic Metadata) =====================
 
-/**
- * Reconcile orders that are stuck in PENDING but may have been paid.
- * Called by cron as a safety net.
- */
-export async function reconcileMissedPayments(): Promise<{
-  checked: number;
-  recovered: number;
-}> {
-  const workerId = `reconcile_${Date.now()}`;
+export async function reconcileMissedPayments(): Promise<any> {
+  const workerId = `reconcile_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+  const cutoff = new Date(Date.now() - 30000);
 
-  // Find PENDING orders older than 2 minutes (allow time for webhook to arrive)
-  const cutoffTime = new Date(Date.now() - 2 * 60 * 1000);
-
-  const pendingOrders = await prisma.order.findMany({
-    where: {
-      status: "PENDING",
-      createdAt: { lt: cutoffTime },
-      paymentRef: { not: null },
-      paymentRef: { not: { startsWith: "SIM-" } },
-      metadata: { path: ["bakongMd5"], string_not: null },
-    },
-    select: {
-      id: true,
-      orderNumber: true,
-      paymentRef: true,
-      amountUsd: true,
-      amountKhr: true,
-      currency: true,
-      metadata: true,
-    },
+  const pending = await prisma.order.findMany({
+    where: { status: "PENDING", createdAt: { lt: cutoff }, paymentRef: { not: null } },
     take: 50,
-    orderBy: { createdAt: "asc" },
   });
 
-  const results = { checked: pendingOrders.length, recovered: 0 };
+  for (const order of pending) {
+    let md5Hash = order.metadata?.bakongMd5;
+    
+    if (!md5Hash && order.qrString) {
+      // 1. ATOMIC JSON UPDATE (Prevent race/erasure)
+      md5Hash = crypto.createHash("md5").update(order.qrString).digest("hex");
+      await prisma.$executeRaw`
+        UPDATE "Order"
+        SET "metadata" = jsonb_set(COALESCE("metadata", '{}'::jsonb), '{bakongMd5}', ${JSON.stringify(md5Hash)}::jsonb, true)
+        WHERE "id" = ${order.id}
+      `;
+    }
 
-  for (const order of pendingOrders) {
-    const md5Hash = (order as any).metadata?.bakongMd5;
     if (!md5Hash) continue;
 
     try {
-      const bakongResult = await checkBakongPayment(md5Hash);
-
-      if (bakongResult.paid) {
-        // Validate amount
-        const validation = validatePaymentAmount(
-          order.amountUsd,
-          order.currency === "KHR" ? order.amountKhr : undefined,
-          bakongResult.amount ? parseFloat(String(bakongResult.amount)) : 0,
-          order.currency
-        );
-
-        if (validation.valid) {
-          const markResult = await markOrderPaid(order.id, {
-            paymentRef: order.paymentRef || `RECONCILE-${md5Hash.slice(0, 16)}`,
-            amount: bakongResult.amount ? parseFloat(String(bakongResult.amount)) : order.amountUsd,
-            currency: bakongResult.currency || order.currency,
-            transactionId: bakongResult.transactionId,
-            verifiedBy: "cron",
-          });
-
-          if (markResult.success) {
-            results.recovered++;
-          }
-        }
+      const bakong = await checkBakongPayment(md5Hash);
+      if (bakong.paid) {
+        // ALWAYS use the single authority markOrderPaid which handles locks/idempotency
+        await markOrderPaid(order.id, {
+          paymentRef: order.paymentRef,
+          amount: bakong.amount,
+          currency: bakong.currency,
+          transactionId: bakong.transactionId,
+          verifiedBy: "cron",
+        });
+      } else if (order.paymentExpiresAt && order.paymentExpiresAt < new Date()) {
+        // Guard expiration with status check
+        await prisma.order.updateMany({ 
+          where: { id: order.id, status: "PENDING" }, 
+          data: { status: "EXPIRED" } 
+        });
       }
-    } catch {
-      // Continue to next order
-    }
+    } catch {}
   }
-
-  return results;
 }
 
-// ============================================================================
-// CRON EXECUTION LOCK
-// Prevents overlapping cron runs
-// ============================================================================
-
-const CRON_LOCK_KEY = "cron_delivery_lock";
-const CRON_LOCK_DURATION_MS = 4 * 60 * 1000; // 4 minutes (less than 5-minute cron interval)
-
-export async function acquireCronLock(): Promise<boolean> {
-  const now = new Date();
-  const lockExpiry = new Date(now.getTime() + CRON_LOCK_DURATION_MS);
-
-  // Use Settings table as a distributed lock store
-  const result = await prisma.settings.updateMany({
-    where: {
-      OR: [
-        { id: 1, lastBalanceCheck: null },
-        { id: 1, lastBalanceCheck: { lt: now } },
-      ],
-    },
-    data: {
-      lastBalanceCheck: lockExpiry,
-    },
-  });
-
-  return result.count > 0;
-}
-
-export async function releaseCronLock(): Promise<void> {
-  await prisma.settings.update({
-    where: { id: 1 },
-    data: {
-      lastBalanceCheck: null,
-    },
-  });
+export async function checkPaymentStatus(orderId: string): Promise<any> {
+  const order = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!order) return { status: "NOT_FOUND" };
+  const paid = ["PAID", "QUEUED", "DELIVERING", "DELIVERED"].includes(order.status);
+  return { status: order.status, isPaid: paid };
 }
