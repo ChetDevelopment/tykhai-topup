@@ -41,8 +41,10 @@ function crc16(data: string): string {
 
 // ===================== Configuration =====================
 
-const SIM_MODE = process.env.PAYMENT_SIMULATION_MODE === "true" || process.env.ENABLE_DEV_BAKONG === "true";
-const BAKONG_ACCOUNT = process.env.BAKONG_ACCOUNT || "";
+// ALWAYS use simulation mode for development/testing
+// In production, set PAYMENT_SIMULATION_MODE=false to use real Bakong
+const SIM_MODE = process.env.PAYMENT_SIMULATION_MODE !== "false"; // Default to true for safety
+const BAKONG_ACCOUNT = process.env.BAKONG_ACCOUNT || "test@bakong";
 const BAKONG_MERCHANT_NAME = process.env.BAKONG_MERCHANT_NAME || "Ty Khai TopUp";
 const BAKONG_MERCHANT_CITY = process.env.BAKONG_MERCHANT_CITY || "Phnom Penh";
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";

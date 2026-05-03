@@ -169,6 +169,11 @@ export async function POST(req: NextRequest) {
       const publicUrl = process.env.PUBLIC_APP_URL || baseUrl;
       
       try {
+        console.log("[Orders] Initiating payment for order:", orderNumber);
+        console.log("[Orders] Simulation mode:", isSimulation);
+        console.log("[Orders] Payment method:", data.paymentMethod);
+        console.log("[Orders] Amount:", finalPrice);
+        
         // CRITICAL: Generate QR synchronously (no timeout in simulation)
         paymentInit = await initiatePayment({
           orderNumber,
@@ -188,12 +193,21 @@ export async function POST(req: NextRequest) {
           },
         });
         
+        console.log("[Orders] Payment initiated successfully:", {
+          hasQr: !!paymentInit?.qrString,
+          qrLength: paymentInit?.qrString?.length,
+          paymentRef: paymentInit?.paymentRef,
+        });
+        
         debugInfo.qrGenerated = !!paymentInit?.qrString;
         debugInfo.qrLength = paymentInit?.qrString?.length || 0;
+        debugInfo.paymentRef = paymentInit?.paymentRef;
       } catch (paymentError: any) {
         // FALLBACK: Generate minimal QR even if payment init fails
         console.error("[Orders] Payment init failed, using fallback:", paymentError.message);
+        console.error("[Orders] Error stack:", paymentError.stack);
         debugInfo.paymentInitError = paymentError.message;
+        debugInfo.paymentInitStack = paymentError.stack;
         
         // Generate fallback QR (simple format, still scannable)
         const fallbackRef = `FALLBACK-${Date.now()}`;
@@ -209,6 +223,7 @@ export async function POST(req: NextRequest) {
         };
         
         debugInfo.fallbackUsed = true;
+        debugInfo.fallbackQrLength = paymentInit.qrString.length;
       }
       
       // CRITICAL SAFETY: Ensure QR exists (NEVER return null)
