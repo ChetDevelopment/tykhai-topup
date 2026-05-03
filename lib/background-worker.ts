@@ -1,34 +1,26 @@
 /**
  * Background Worker System for Ty Khai TopUp
- * Handles: Payment re-checking, expired order cleanup, delivery retry, fraud detection
- * Uses: Node.js cron + Prisma (for single-server). Use BullMQ/Redis for multi-server.
+ * Handles: Payment reconciliation, expiration, delivery retry, fraud detection, balance monitoring
+ * Uses: Node.js cron + Prisma (for single-server). 
  */
 
 import { prisma } from "./prisma";
-import { checkBakongPayment, validatePaymentAmount } from "./payment";
-import { processSuccessfulPayment } from "./payment";
-import { logSecurityEvent } from "./security";
-import { decryptField } from "./encryption";
 import { notifyTelegram } from "./telegram";
 import { checkGameDropBalance } from "./gamedrop";
 import { pauseSystem, resumeSystem, sendBalanceAlert } from "./system-control";
 
 // ===================== Configuration =====================
 const WORKER_CONFIG = {
-  paymentCheckIntervalMs: 30 * 1000,  // Check pending payments every 30 SECONDS (was 5 min - too slow!)
-  expireCheckIntervalMs: 15 * 60 * 1000, // Check expired orders every 15 min
-  expireCheckIntervalMs: 15 * 60 * 1000, // Check expired orders every 15 min
+  reconcileIntervalMs: 30 * 1000,      // Reconcile missed payments every 30 SECONDS
   deliveryRetryIntervalMs: 10 * 60 * 1000, // Retry failed deliveries every 10 min
   fraudCheckIntervalMs: 30 * 60 * 1000, // Run fraud checks every 30 min
-  balanceCheckIntervalMs: 5 * 60 * 1000, // Check GameDrop balance every 5 min
+  balanceCheckIntervalMs: 5 * 60 * 1000, // Check provider balance every 5 min
   reservationCleanupIntervalMs: 15 * 60 * 1000, // Cleanup expired reservations
   batchSize: 50,
   maxDeliveryAttempts: 3,
-  deliveryRetryDelays: [5 * 60 * 1000, 15 * 60 * 1000, 30 * 60 * 1000],
 };
 
 // ===================== Worker State =====================
-// Use atomic flag with timeout protection to prevent race conditions
 let isRunning = false;
 let intervals: NodeJS.Timeout[] = [];
 let lastRunTimestamp: Record<string, number> = {};
@@ -36,20 +28,16 @@ const WORKER_TIMEOUT_MS = 60 * 1000; // 60 second timeout per job
 
 // ===================== Main Worker Loop =====================
 export async function startBackgroundWorker() {
-  console.log("[worker] Starting background worker...");
+  console.log("[worker] Starting background worker loop...");
 
-  // Job 1: Check pending payments (with execution lock)
-  const paymentInterval = setInterval(async () => {
-    const jobName = "checkPendingPayments";
+  // Job 1: Reconcile Payments (missed webhooks + expiration)
+  // This is the FINAL SOURCE OF TRUTH for payment status.
+  const reconcileInterval = setInterval(async () => {
+    const jobName = "reconcilePayments";
     const now = Date.now();
     
-    // Prevent overlap + timeout protection
-    if (isRunning) {
-      console.log(`[worker] ${jobName} skipped - previous run still active`);
-      return;
-    }
+    if (isRunning) return;
     
-    // Timeout protection: force-release lock if stuck
     if (lastRunTimestamp[jobName] && (now - lastRunTimestamp[jobName]) > WORKER_TIMEOUT_MS) {
       console.warn(`[worker] ${jobName} timeout - force releasing lock`);
       isRunning = false;
@@ -59,34 +47,33 @@ export async function startBackgroundWorker() {
     isRunning = true;
     
     try {
-      await checkPendingPayments();
+      const { reconcileMissedPayments } = await import("./payment");
+      const results = await reconcileMissedPayments();
+      if (results.recovered > 0 || results.expired > 0) {
+        console.log(`[worker] Reconciliation: ${results.recovered} recovered, ${results.expired} expired, ${results.checked} checked`);
+      }
     } catch (err) {
       console.error(`[worker] ${jobName} error:`, err);
     } finally {
       isRunning = false;
       delete lastRunTimestamp[jobName];
     }
-  }, WORKER_CONFIG.paymentCheckIntervalMs);
+  }, WORKER_CONFIG.reconcileIntervalMs);
 
-  // Job 2: Expire old pending orders
-  const expireInterval = setInterval(async () => {
-    try {
-      await expireOldPendingOrders();
-    } catch (err) {
-      console.error("[worker] Expire check error:", err);
-    }
-  }, WORKER_CONFIG.expireCheckIntervalMs);
-
-  // Job 3: Retry failed deliveries
+  // Job 2: Retry Failed Deliveries
   const deliveryInterval = setInterval(async () => {
     try {
-      await retryFailedDeliveries();
+      const { processDeliveryQueue } = await import("./payment");
+      const results = await processDeliveryQueue(WORKER_CONFIG.batchSize);
+      if (results.processed > 0) {
+        console.log(`[worker] Delivery queue: ${results.succeeded} succeeded, ${results.failed} failed, ${results.skipped} skipped`);
+      }
     } catch (err) {
       console.error("[worker] Delivery retry error:", err);
     }
   }, WORKER_CONFIG.deliveryRetryIntervalMs);
 
-  // Job 4: Fraud detection
+  // Job 3: Fraud detection
   const fraudInterval = setInterval(async () => {
     try {
       await runFraudDetection();
@@ -95,27 +82,26 @@ export async function startBackgroundWorker() {
     }
   }, WORKER_CONFIG.fraudCheckIntervalMs);
 
-  // Job 5: Balance check
+  // Job 4: Balance check
   const balanceInterval = setInterval(async () => {
     try {
       await runBalanceCheck();
     } catch (err) {
       console.error("[worker] Balance check error:", err);
     }
-  }, WORKER_CONFIG.balanceCheckIntervalMs || 5 * 60 * 1000);
+  }, WORKER_CONFIG.balanceCheckIntervalMs);
 
-  // Job 6: Reservation cleanup
+  // Job 5: Reservation cleanup
   const reservationInterval = setInterval(async () => {
     try {
       await expireReservations();
     } catch (err) {
       console.error("[worker] Reservation cleanup error:", err);
     }
-  }, WORKER_CONFIG.reservationCleanupIntervalMs || 15 * 60 * 1000);
+  }, WORKER_CONFIG.reservationCleanupIntervalMs);
 
-  intervals = [paymentInterval, expireInterval, deliveryInterval, fraudInterval, balanceInterval, reservationInterval];
-
-  console.log("[worker] All jobs scheduled successfully");
+  intervals = [reconcileInterval, deliveryInterval, fraudInterval, balanceInterval, reservationInterval];
+  console.log("[worker] All background jobs scheduled successfully");
 }
 
 export async function stopBackgroundWorker() {
@@ -124,740 +110,115 @@ export async function stopBackgroundWorker() {
   intervals = [];
 }
 
-// ===================== Job 1: Check Pending Payments =====================
-async function checkPendingPayments() {
-  const orders = await prisma.order.findMany({
-    where: {
-      status: "PENDING",
-      paymentRef: { not: null },
-      NOT: [
-        { paymentRef: { startsWith: "SIM-" } },
-        { paymentRef: { startsWith: "WALLET-" } },
-      ],
-    },
-    take: WORKER_CONFIG.batchSize,
-    orderBy: { createdAt: "asc" }, // Oldest first
-    include: { game: true, product: true },
-  });
-
-  if (orders.length === 0) return;
-
-  console.log(`[worker] Checking ${orders.length} pending payments...`);
-
-  for (const order of orders) {
-    try {
-      // Skip if expired
-      if (order.paymentExpiresAt && order.paymentExpiresAt < new Date()) {
-        await handleExpiredPayment(order);
-        continue;
-      }
-
-      // Check payment status - use MD5 hash from metadata (correct source)
-      const md5Hash = (order as any).metadata?.bakongMd5 || order.paymentRef;
-      
-      console.log("[worker] Checking order:", order.orderNumber, {
-        paymentRef: order.paymentRef,
-        md5FromMetadata: (order as any).metadata?.bakongMd5,
-        usingHash: md5Hash,
-      });
-
-      if (!md5Hash) {
-        console.error("[worker] No MD5 hash for order:", order.orderNumber);
-        continue;
-      }
-
-      const result = await checkBakongPayment(md5Hash);
-
-      if (!result) continue; // No update yet
-
-      if (result.paid) {
-        // Payment verified - validate amount
-        const { valid } = validatePaymentAmount(
-          order.amountUsd,
-          order.currency,
-          result.amount ? parseFloat(String(result.amount)) : 0,
-          order.currency === "KHR" ? undefined : 4100
-        );
-
-        if (!valid) {
-          await handleAmountMismatch(order, result);
-          continue;
-        }
-
-        // Payment valid - use SINGLE SOURCE OF TRUTH (markOrderPaid)
-        const { markOrderPaid } = await import("./payment");
-        const markResult = await markOrderPaid(order.id, {
-          paymentRef: result.transactionId || paymentRef,
-          amount: result.amount ? parseFloat(String(result.amount)) : order.amountUsd,
-          currency: result.currency || order.currency,
-          transactionId: result.transactionId,
-          verifiedBy: "cron",
-        });
-
-        if (markResult.success) {
-          await logPaymentEvent(order.id, "VERIFIED", {
-            paymentRef,
-            amount: result.amount,
-            currency: result.currency,
-            method: "cron_background_worker",
-          });
-        } else {
-          console.log(`[worker] Order ${order.orderNumber} already processed: ${markResult.status}`);
-        }
-      } else if (String(result.status) === "UNPAID" || String(result.status) === "expired") {
-        // Payment not completed
-        await logPaymentEvent(order.id, "STILL_PENDING", {
-          paymentRef,
-          status: result.status,
-        });
-      }
-    } catch (err) {
-      console.error(`[worker] Error checking order ${order.orderNumber}:`, err);
-      await logPaymentEvent(order.id, "CHECK_ERROR", {
-        error: String(err),
-      });
-    }
-  }
-}
-
-// ===================== Job 2: Expire Old Pending Orders =====================
-async function expireOldPendingOrders() {
-  const cutoff = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes ago
-
-  const expiredOrders = await prisma.order.findMany({
-    where: {
-      status: "PENDING",
-      createdAt: { lt: cutoff },
-      OR: [
-        { paymentExpiresAt: { lt: new Date() } },
-        { paymentExpiresAt: null, createdAt: { lt: cutoff } },
-      ],
-    },
-    take: WORKER_CONFIG.batchSize,
-  });
-
-  if (expiredOrders.length === 0) return;
-
-  console.log(`[worker] Expiring ${expiredOrders.length} old pending orders...`);
-
-  for (const order of expiredOrders) {
-    try {
-      await handleExpiredPayment(order);
-    } catch (err) {
-      console.error(`[worker] Error expiring order ${order.orderNumber}:`, err);
-    }
-  }
-}
-
-async function handleAmountMismatch(
-  order: { id: string; orderNumber: string },
-  result: { amount?: string | number; currency?: string; expected?: number }
-) {
-  await logPaymentEvent(order.id, "AMOUNT_MISMATCH", {
-    orderNumber: order.orderNumber,
-    expectedAmount: result.expected,
-    paidAmount: result.amount ? parseFloat(String(result.amount)) : undefined,
-    currency: result.currency,
-  });
-
-  await prisma.order.update({
-    where: { id: order.id },
-    data: { status: "FAILED", failureReason: "Payment amount mismatch" },
-  });
-}
-
-async function handleExpiredPayment(order: { id: string; orderNumber: string; paymentMethod: string }) {
-  const newStatus = order.paymentMethod === "WALLET" ? "FAILED" : "CANCELLED";
-
-  await prisma.order.update({
-    where: { id: order.id },
-    data: {
-      status: newStatus,
-      failureReason: "Payment expired",
-    },
-  });
-
-  await logPaymentEvent(order.id, "EXPIRED", {
-    previousStatus: "PENDING",
-    newStatus,
-  });
-
-  // Release wallet reservation if applicable
-  await releaseWalletReservation(order.id);
-}
-
-// ===================== Job 3: Retry Failed Deliveries =====================
-async function retryFailedDeliveries() {
-  const now = new Date();
-
-  const orders = await prisma.order.findMany({
-    where: {
-      status: "PROCESSING",
-      deliveryAttempts: { lt: WORKER_CONFIG.maxDeliveryAttempts },
-      OR: [
-        { nextDeliveryAt: { lte: now } },
-        { nextDeliveryAt: null, lastDeliveryAt: { lt: new Date(now.getTime() - 300000) } }, // 5 min ago
-      ],
-    },
-    take: WORKER_CONFIG.batchSize,
-    include: { game: true, product: true },
-  });
-
-  if (orders.length === 0) return;
-
-  console.log(`[worker] Retrying ${orders.length} failed deliveries...`);
-
-  for (const order of orders) {
-    try {
-      const nextAttempt = (order.deliveryAttempts || 0) + 1;
-
-      await logDeliveryEvent(order.id, nextAttempt, "RETRY", {
-        previousAttempts: order.deliveryAttempts,
-      });
-
-      // Call delivery function
-      const result = await deliverOrder(order);
-
-      if (result.success) {
-        await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            status: "DELIVERED",
-            deliveredAt: new Date(),
-            deliveryAttempts: nextAttempt,
-          },
-        });
-
-        await logDeliveryEvent(order.id, nextAttempt, "SUCCESS", {
-          durationMs: result.durationMs,
-        });
-      } else {
-        // Failed again
-        const nextRetryDelay = WORKER_CONFIG.deliveryRetryDelays[nextAttempt - 1] || 30 * 60 * 1000;
-
-        await prisma.order.update({
-          where: { id: order.id },
-          data: {
-            deliveryAttempts: nextAttempt,
-            lastDeliveryAt: new Date(),
-            nextDeliveryAt: new Date(Date.now() + nextRetryDelay),
-          },
-        });
-
-        await logDeliveryEvent(order.id, nextAttempt, "FAILED", {
-          error: result.error,
-          nextRetryAt: new Date(Date.now() + nextRetryDelay).toISOString(),
-        });
-
-        // If max attempts reached, require refund
-        if (nextAttempt >= WORKER_CONFIG.maxDeliveryAttempts) {
-          await prisma.order.update({
-            where: { id: order.id },
-            data: { status: "REFUND_REQUIRED" },
-          });
-
-          await logPaymentEvent(order.id, "MAX_DELIVERY_ATTEMPTS", {
-            attempts: nextAttempt,
-            action: "REQUIRES_REFUND",
-          });
-
-          // Notify admin
-          await notifyTelegram(
-            `⚠️ <b>Refund Required</b>\n` +
-              `Order #${order.orderNumber} failed delivery after ${nextAttempt} attempts.\n` +
-              `Action required: Process refund manually.`
-          );
-        }
-      }
-    } catch (err) {
-      console.error(`[worker] Delivery retry error for ${order.orderNumber}:`, err);
-    }
-  }
-}
-
-// ===================== Job 4: Fraud Detection =====================
+// ===================== Job 3: Fraud Detection =====================
 async function runFraudDetection() {
-  console.log("[worker] Running fraud detection...");
-
-  // Rule 1: High-frequency orders from same IP/email
+  // Rule: High-frequency orders from same IP/email/UID
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  
   const recentOrders = await prisma.order.findMany({
-    where: {
-      createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) }, // Last hour
-    },
+    where: { createdAt: { gte: hourAgo } },
     select: { id: true, customerEmail: true, ipAddress: true, playerUid: true, amountUsd: true },
   });
+
+  if (recentOrders.length < 5) return;
 
   const emailCounts = new Map<string, number>();
   const ipCounts = new Map<string, number>();
   const uidCounts = new Map<string, number>();
-  const amountCounts = new Map<number, number>();
 
   for (const order of recentOrders) {
-    if (order.customerEmail) {
-      const email = decryptField(order.customerEmail) || order.customerEmail;
-      emailCounts.set(email, (emailCounts.get(email) || 0) + 1);
-    }
-    if (order.ipAddress) {
-      const ip = decryptField(order.ipAddress) || order.ipAddress;
-      ipCounts.set(ip, (ipCounts.get(ip) || 0) + 1);
-    }
+    if (order.customerEmail) emailCounts.set(order.customerEmail, (emailCounts.get(order.customerEmail) || 0) + 1);
+    if (order.ipAddress) ipCounts.set(order.ipAddress, (ipCounts.get(order.ipAddress) || 0) + 1);
     uidCounts.set(order.playerUid, (uidCounts.get(order.playerUid) || 0) + 1);
-    amountCounts.set(order.amountUsd, (amountCounts.get(order.amountUsd) || 0) + 1);
   }
 
-  // Flag high-frequency
+  // Thresholds
   for (const [email, count] of emailCounts) {
-    if (count > 10) { // More than 10 orders/hour
-      await flagFraud({
-        type: "HIGH_FREQUENCY",
-        severity: "HIGH",
-        description: `Email ${email} has ${count} orders in the last hour`,
-        metadata: { email, count, timeWindow: "1 hour" },
-      });
-    }
+    if (count > 8) await flagFraud("HIGH_FREQUENCY_EMAIL", "HIGH", `Email ${email} has ${count} orders in 1hr`, { email, count });
   }
-
   for (const [ip, count] of ipCounts) {
-    if (count > 15) { // More than 15 orders/hour from same IP
-      await flagFraud({
-        type: "HIGH_FREQUENCY_IP",
-        severity: "HIGH",
-        description: `IP ${ip} has ${count} orders in the last hour`,
-        metadata: { ip, count, timeWindow: "1 hour" },
-      });
-    }
+    if (count > 12) await flagFraud("HIGH_FREQUENCY_IP", "HIGH", `IP ${ip} has ${count} orders in 1hr`, { ip, count });
   }
-
-  // Flag same UID across multiple accounts
   for (const [uid, count] of uidCounts) {
-    if (count > 5) { // Same UID used 5+ times in an hour
-      await flagFraud({
-        type: "SAME_UID_MULTI",
-        severity: "MEDIUM",
-        description: `UID ${uid} used in ${count} orders in the last hour`,
-        metadata: { uid, count, timeWindow: "1 hour" },
-      });
-    }
-  }
-
-  // Flag abnormal amounts (e.g., very high amount)
-  for (const [amount, count] of amountCounts) {
-    if (amount > 100 && count > 3) { // High-value orders
-      await flagFraud({
-        type: "ABNORMAL_AMOUNT",
-        severity: "MEDIUM",
-        description: `High-value amount $${amount} appears ${count} times in 1 hour`,
-        metadata: { amount, count, timeWindow: "1 hour" },
-      });
-    }
+    if (count > 5) await flagFraud("SAME_UID_MULTI", "MEDIUM", `UID ${uid} used in ${count} orders in 1hr`, { uid, count });
   }
 }
 
-// ===================== Helper Functions =====================
-async function flagFraud(params: {
-  type: string;
-  severity: string;
-  description: string;
-  metadata: Record<string, unknown>;
-  orderId?: string;
-  userId?: string;
-}) {
-  // Check if already flagged recently
-  const recentFlag = await prisma.fraudFlag.findFirst({
-    where: {
-      type: params.type,
-      isResolved: false,
-      createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }, // Last 24 hours
-      ...(params.orderId ? { orderId: params.orderId } : {}),
-    },
+async function flagFraud(type: string, severity: string, description: string, metadata: any) {
+  // Avoid duplicate flags within 24h
+  const exists = await prisma.fraudFlag.findFirst({
+    where: { type, description, createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } }
   });
-
-  if (recentFlag) return; // Already flagged
+  if (exists) return;
 
   await prisma.fraudFlag.create({
-    data: {
-      type: params.type,
-      severity: params.severity,
-      description: params.description,
-      metadata: JSON.stringify(params.metadata),
-      orderId: params.orderId,
-      userId: params.userId,
-    },
+    data: { type, severity, description, metadata: JSON.stringify(metadata) }
   });
 
-  // Notify admin for critical issues
-  if (params.severity === "HIGH" || params.severity === "CRITICAL") {
-    await notifyTelegram(
-      `🚨 <b>Fraud Alert</b>\n` +
-        `Type: ${params.type}\n` +
-        `Severity: ${params.severity}\n` +
-        `Description: ${params.description}`
-    );
+  if (severity === "HIGH") {
+    await notifyTelegram(`🚨 <b>Fraud Alert: ${type}</b>\n${description}`);
   }
 }
 
-async function scheduleDelivery(orderId: string) {
-  await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      status: "PROCESSING",
-      lastDeliveryAt: new Date(),
-      nextDeliveryAt: new Date(), // Immediate
-    },
-  });
-}
-
-async function releaseWalletReservation(orderId: string) {
-  const reservation = await prisma.walletReservation.findFirst({
-    where: { orderId },
-  });
-
-  if (reservation && reservation.status === "ACTIVE") {
-    await prisma.walletReservation.update({
-      where: { id: reservation.id },
-      data: { status: "EXPIRED" },
-    });
-
-    // Refund to wallet if deducted
-    if (reservation.userId && reservation.amount > 0) {
-      await prisma.user.update({
-        where: { id: reservation.userId },
-        data: { walletBalance: { increment: reservation.amount } },
-      });
-    }
-  }
-}
-
-// ===================== Delivery Function (Idempotent + Fail-Safe) =====================
-async function deliverOrder(order: {
-  id: string;
-  orderNumber: string;
-  game: { slug: string; name: string };
-  product: { name: string; amount: number };
-  playerUid: string;
-  serverId?: string | null;
-}): Promise<{ success: boolean; error?: string; durationMs?: number }> {
-  const startTime = Date.now();
-
-  try {
-    // Check if already delivered (idempotent)
-    const existingOrder = await prisma.order.findUnique({
-      where: { id: order.id },
-      select: { status: true, deliveredAt: true },
-    });
-
-    if (existingOrder?.status === "DELIVERED") {
-      return { success: true, durationMs: 0 };
-    }
-
-    // Get settings
-    const settings = await prisma.settings.findUnique({ where: { id: 1 } });
-    if (!settings) {
-      throw new Error("Settings not configured");
-    }
-
-    // Get product with both provider offer IDs
-    const product = await prisma.product.findUnique({
-      where: { id: order.product.id },
-      select: { id: true, name: true, gameDropOfferId: true, g2bulkCatalogueName: true },
-    });
-
-    if (!product) {
-      throw new Error(`Product not found: ${order.product.name}`);
-    }
-
-    // Determine which provider to use
-    // Priority: G2Bulk if configured, otherwise GameDrop
-    if (product.g2bulkCatalogueName && settings.g2bulkToken) {
-      // Use G2Bulk provider
-      return await deliverWithG2Bulk(settings.g2bulkToken, product.g2bulkCatalogueName, order, startTime);
-    } else if (product.gameDropOfferId && settings.gameDropToken) {
-      // Use GameDrop provider (existing logic)
-      return await deliverWithGameDrop(settings.gameDropToken, product.gameDropOfferId, order, startTime);
-    } else {
-      throw new Error(`No delivery provider configured for product: ${order.product.name}`);
-    }
-  } catch (err) {
-    // Log error but don't throw - let retry logic handle it
-    console.error(`[delivery] Order ${order.orderNumber} failed:`, err);
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Unknown delivery error",
-    };
-  }
-}
-
-// ===================== G2Bulk Delivery =====================
-async function deliverWithG2Bulk(
-  token: string,
-  catalogueName: string,
-  order: { id: string; orderNumber: string; playerUid: string; serverId?: string | null },
-  startTime: number
-): Promise<{ success: boolean; error?: string; durationMs?: number }> {
-  const { validateG2BulkPlayerId, createG2BulkOrder, checkG2BulkOrderStatus } = await import("./g2bulk");
-
-  // Validate player ID with G2Bulk
-  console.log(`[g2bulk] Validating player ID: ${order.playerUid}`);
-  const validation = await validateG2BulkPlayerId(
-    token,
-    order.playerUid,
-    order.serverId || undefined
-  );
-
-  if (!validation.valid) {
-    throw new Error(`Player ID validation failed: ${validation.message}`);
-  }
-
-  console.log(`[g2bulk] Creating G2Bulk order for ${order.orderNumber}`);
-
-  const result = await createG2BulkOrder(
-    token,
-    catalogueName,
-    order.playerUid,
-    order.serverId || undefined,
-    order.orderNumber // Idempotency key
-  );
-
-  if (!result.success) {
-    throw new Error(`G2Bulk delivery failed: ${result.message}`);
-  }
-
-  // Wait and check order status
-  let attempts = 0;
-  const maxAttempts = 10;
-  while (attempts < maxAttempts && result.orderId) {
-    await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
-    const statusCheck = await checkG2BulkOrderStatus(token, result.orderId);
-    
-    if (statusCheck.success) {
-      if (statusCheck.status === "COMPLETED") {
-        console.log(`[g2bulk] Order ${order.orderNumber} completed successfully`);
-        return { success: true, durationMs: Date.now() - startTime };
-      } else if (statusCheck.status === "FAILED") {
-        throw new Error(`G2Bulk order failed: ${statusCheck.message}`);
-      }
-    }
-    attempts++;
-  }
-
-  // If we get here, order is still processing - that's OK
-  console.log(`[g2bulk] Order ${order.orderNumber} is processing (${result.status})`);
-  return { success: true, durationMs: Date.now() - startTime };
-}
-
-// ===================== GameDrop Delivery =====================
-async function deliverWithGameDrop(
-  token: string,
-  offerId: number,
-  order: { id: string; orderNumber: string; playerUid: string; serverId?: string | null },
-  startTime: number
-): Promise<{ success: boolean; error?: string; durationMs?: number }> {
-  const { validatePlayerId, createGameDropOrder } = await import("./gamedrop");
-
-  // Validate player ID with GameDrop
-  console.log(`[gamedrop] Validating player ID: ${order.playerUid}`);
-  const validation = await validatePlayerId(
-    token,
-    offerId,
-    order.playerUid,
-    order.serverId || undefined
-  );
-
-  if (!validation.valid) {
-    throw new Error(`Player ID validation failed: ${validation.message}`);
-  }
-
-  console.log(`[gamedrop] Creating GameDrop order for ${order.orderNumber}`);
-
-  const result = await createGameDropOrder(
-    token,
-    offerId,
-    order.playerUid,
-    order.serverId || undefined,
-    order.orderNumber, // Idempotency key
-    undefined // customerEmail
-  );
-
-  if (result.status !== "COMPLETED" && result.status !== "PENDING") {
-    throw new Error(`GameDrop delivery failed: ${result.message}`);
-  }
-
-  const durationMs = Date.now() - startTime;
-
-  console.log(`[gamedrop] Order ${order.orderNumber} delivered successfully`, {
-    status: result.status,
-    transactionId: result.transactionId,
-  });
-
-  return { success: true, durationMs };
-}
-
-// ===================== Logging Helpers =====================
-async function logPaymentEvent(
-  orderId: string,
-  event: string,
-  details: Record<string, unknown>
-) {
-  try {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: { orderNumber: true, paymentRef: true, status: true },
-    });
-
-    await prisma.paymentLog.create({
-      data: {
-        orderId,
-        event,
-        status: order?.status || "UNKNOWN",
-        paymentRef: order?.paymentRef,
-        metadata: JSON.stringify(details),
-      },
-    });
-  } catch (err) {
-    console.error("[worker] Failed to log payment event:", err);
-  }
-}
-
-async function logDeliveryEvent(
-  orderId: string,
-  attemptNumber: number,
-  status: string,
-  details: Record<string, unknown>
-) {
-  try {
-    await prisma.deliveryLog.create({
-      data: {
-        orderId,
-        attemptNumber,
-        status,
-        requestPayload: details ? JSON.stringify(details) : undefined,
-      },
-    });
-  } catch (err) {
-    console.error("[worker] Failed to log delivery event:", err);
-  }
-}
-
-// ===================== Job 5: Balance Check =====================
+// ===================== Job 4: Balance Check =====================
 async function runBalanceCheck() {
   const settings = await prisma.settings.findUnique({ where: { id: 1 } });
   if (!settings || settings.systemMode === "FORCE_CLOSE") return;
 
-  // Check G2Bulk balance if configured
-  if (settings.g2bulkToken) {
-    try {
+  try {
+    let balanceData: any = null;
+    let source = "";
+
+    if (settings.g2bulkToken) {
       const { checkG2BulkBalance } = await import("./g2bulk");
-      const data = await checkG2BulkBalance(settings.g2bulkToken);
-      const available = data.balance - data.draftBalance;
+      balanceData = await checkG2BulkBalance(settings.g2bulkToken);
+      source = "G2BULK";
+    } else if (settings.gameDropToken) {
+      balanceData = await checkGameDropBalance(settings.gameDropToken);
+      source = "GAMEDROP";
+    }
 
-      // Update latest balance
-      await prisma.settings.update({
-        where: { id: 1 },
-        data: {
-          currentBalance: data.balance,
-          lastBalanceCheck: new Date(),
-          g2bulkPartnerId: data.partnerId,
-        },
-      });
+    if (!balanceData) return;
 
-      // Log to BalanceLog
-      await prisma.balanceLog.create({
-        data: {
-          balance: data.balance,
-          reserved: data.draftBalance,
-          available,
-          source: "G2BULK",
-        },
-      });
+    const available = balanceData.balance - balanceData.draftBalance;
 
-      // AUTO mode actions only
-      if (settings.systemMode === "AUTO") {
-        if (settings.criticalThreshold && available < settings.criticalThreshold) {
-          await pauseSystem("LOW_BALANCE", available);
-        } else if (settings.warningThreshold && available < settings.warningThreshold) {
-          await sendBalanceAlert("WARNING", available, settings.warningThreshold);
-        } else if (settings.systemStatus === "PAUSED" && settings.pauseReason === "LOW_BALANCE") {
-          await resumeSystem("Balance restored above critical threshold");
-        }
-      }
-    } catch (err) {
-      console.error("[worker] G2Bulk check failed:", err);
-      if (settings?.systemMode === "AUTO") {
-        await pauseSystem("API_ERROR");
+    await prisma.settings.update({
+      where: { id: 1 },
+      data: { currentBalance: balanceData.balance, lastBalanceCheck: new Date() }
+    });
+
+    await prisma.balanceLog.create({
+      data: { balance: balanceData.balance, reserved: balanceData.draftBalance, available, source }
+    });
+
+    // Auto-pause if low balance
+    if (settings.systemMode === "AUTO") {
+      if (settings.criticalThreshold && available < settings.criticalThreshold) {
+        await pauseSystem("LOW_BALANCE", available);
+      } else if (settings.warningThreshold && available < settings.warningThreshold) {
+        await sendBalanceAlert("WARNING", available, settings.warningThreshold);
       }
     }
-  } else if (settings.gameDropToken) {
-    // Fallback to GameDrop
-    try {
-      const data = await checkGameDropBalance(settings.gameDropToken);
-      const available = data.balance - data.draftBalance;
-
-      await prisma.settings.update({
-        where: { id: 1 },
-        data: {
-          currentBalance: data.balance,
-          lastBalanceCheck: new Date(),
-          gameDropPartnerId: data.partnerId,
-        },
-      });
-
-      await prisma.balanceLog.create({
-        data: {
-          balance: data.balance,
-          reserved: data.draftBalance,
-          available,
-          source: "GAMEDROP",
-        },
-      });
-
-      if (settings.systemMode === "AUTO") {
-        if (settings.criticalThreshold && available < settings.criticalThreshold) {
-          await pauseSystem("LOW_BALANCE", available);
-        } else if (settings.warningThreshold && available < settings.warningThreshold) {
-          await sendBalanceAlert("WARNING", available, settings.warningThreshold);
-        } else if (settings.systemStatus === "PAUSED" && settings.pauseReason === "LOW_BALANCE") {
-          await resumeSystem("Balance restored above critical threshold");
-        }
-      }
-    } catch (err) {
-      console.error("[worker] GameDrop check failed:", err);
-      if (settings?.systemMode === "AUTO") {
-        await pauseSystem("API_ERROR");
-      }
-    }
+  } catch (err) {
+    console.error("[worker] Balance check failed:", err);
   }
 }
 
-// ===================== Job 6: Reservation Cleanup =====================
+// ===================== Job 5: Reservation Cleanup =====================
 async function expireReservations() {
+  const now = new Date();
   const expired = await prisma.walletReservation.findMany({
-    where: { status: "ACTIVE", expiresAt: { lt: new Date() } },
+    where: { status: "ACTIVE", expiresAt: { lt: now } }
   });
 
   for (const res of expired) {
-    await prisma.walletReservation.update({
-      where: { id: res.id },
-      data: { status: "EXPIRED" },
-    });
-    await prisma.settings.update({
-      where: { id: 1 },
-      data: { reservedBalance: { decrement: res.amount } },
-    });
+    await prisma.walletReservation.update({ where: { id: res.id }, data: { status: "EXPIRED" } });
+    if (res.userId) {
+       // Refund wallet balance
+       await prisma.user.update({
+         where: { id: res.userId },
+         data: { walletBalance: { increment: res.amount } }
+       });
+    }
   }
-}
-
-// ===================== Worker Health Check =====================
-export async function getWorkerStatus() {
-  return {
-    isRunning,
-    jobs: {
-      paymentCheck: { intervalMs: WORKER_CONFIG.paymentCheckIntervalMs },
-      expireCheck: { intervalMs: WORKER_CONFIG.expireCheckIntervalMs },
-      deliveryRetry: { intervalMs: WORKER_CONFIG.deliveryRetryIntervalMs },
-      fraudCheck: { intervalMs: WORKER_CONFIG.fraudCheckIntervalMs },
-      balanceCheck: { intervalMs: WORKER_CONFIG.balanceCheckIntervalMs },
-      reservationCleanup: { intervalMs: WORKER_CONFIG.reservationCleanupIntervalMs },
-    },
-    config: WORKER_CONFIG,
-  };
 }

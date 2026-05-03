@@ -1,0 +1,386 @@
+// Prisma schema for Ty Khai TopUp - Final Single Source of Truth Architecture
+// 
+// EXECUTION SAFETY GUARANTEES:
+// - lockVersion prevents stale worker overwrites
+// - SENDING state isolates provider call intent
+// - providerFinalizedAt prevents replay after external completion
+// - All transitions are single-row atomic updates
+// - No cross-table decision making
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// CORE EXECUTION STATE (FINAL HARDENED VERSION)
+// ============================================================================
+
+/**
+ * DeliveryState - THE ONLY AUTHORITATIVE EXECUTION STATE
+ * 
+ * CRITICAL FIELDS FOR SAFETY:
+ * - lockVersion: Prevents stale worker overwrites (optimistic locking)
+ * - status: Explicit execution phase machine
+ * - providerFinalizedAt: Final authority for external completion
+ * 
+ * ALL other tables are projections ONLY.
+ */
+model DeliveryState {
+  id                    String             @id @default(uuid())
+  orderId               String             @unique
+  order                 Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  // EXECUTION PHASE STATE MACHINE
+  // PENDING → IN_PROGRESS → SENDING → DISPATCHED → [SUCCESS | FAILED | UNKNOWN]
+  status                DeliveryStatus     @default(PENDING)
+  
+  // Provider info (immutable once set on first dispatch)
+  provider              String?
+  
+  // Idempotency (immutable per attempt)
+  idempotencyKey        String?            @unique
+  payloadHash           String?
+  
+  // Execution tracking
+  attempt               Int                @default(0)
+  maxAttempts           Int                @default(3)
+  
+  // Distributed locking with VERSIONING (critical for crash safety)
+  lockedBy              String?
+  lockUntil             DateTime?
+  lockVersion           Int                @default(0)
+  
+  // Execution phase tracking
+  dispatchedAt          DateTime?
+  providerFinalizedAt   DateTime?          // FINAL AUTHORITY: external execution complete
+  completedAt           DateTime?
+  nextAttemptAt         DateTime?
+  
+  // Error tracking
+  lastError             String?
+  errorCode             String?
+  
+  // Provider response (stored atomically with state transition)
+  providerTransactionId String?
+  providerResponse      Json?
+  
+  // Metadata
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  
+  // Indexes for worker queries (optimized for SKIP LOCKED)
+  @@index([status, nextAttemptAt, lockUntil])
+  @@index([status, attempt, lockedBy])
+  @@index([orderId, status])
+  @@index([provider, status, createdAt])
+  @@index([providerFinalizedAt, status])
+}
+
+/**
+ * EXPLICIT EXECUTION PHASE STATE MACHINE
+ * 
+ * CRITICAL DISTINCTIONS:
+ * - IN_PROGRESS: Worker claimed, preparing to call provider
+ * - SENDING: Intent persisted, about to call provider (CRASH BOUNDARY)
+ * - DISPATCHED: Provider response received and stored
+ * - providerFinalizedAt: External execution definitively complete
+ * 
+ * STATE TRANSITION RULES:
+ * 1. PENDING → IN_PROGRESS: Atomic claim with lockVersion increment
+ * 2. IN_PROGRESS → SENDING: Persist intent before API call
+ * 3. SENDING → DISPATCHED: Store response, mark dispatched
+ * 4. DISPATCHED → SUCCESS/FAILED/UNKNOWN: Final state based on response
+ * 5. Any → providerFinalizedAt: One-way, irreversible
+ */
+enum DeliveryStatus {
+  PENDING           // Awaiting worker claim
+  IN_PROGRESS       // Worker claimed, preparing execution
+  SENDING           // Intent persisted, about to call provider (CRASH BOUNDARY)
+  DISPATCHED        // Provider response received and stored
+  SUCCESS           // Provider confirmed success
+  FAILED            // Provider confirmed failure (retryable)
+  FAILED_FINAL      // Provider confirmed failure (non-retryable)
+  UNKNOWN           // Response lost, ambiguous state
+  UNKNOWN_ESCALATED // UNKNOWN > 10min, requires status lookup
+  MANUAL_REVIEW     // Requires human intervention
+  DEAD_LETTER       // Permanently failed, in DLQ
+}
+
+// ============================================================================
+// SYSTEM CONTROL (DB-STORED, CROSS-WORKER SYNC)
+// ============================================================================
+
+model BackpressureState {
+  id                  String           @id @default("singleton")
+  mode                BackpressureMode @default(NORMAL)
+  triggeredAt         DateTime?
+  triggeredBy         String?
+  reason              String?
+  
+  // Metrics snapshot
+  unknownRate         Float            @default(0)
+  manualReviewCount   Int              @default(0)
+  dlqGrowthRate       Int              @default(0)
+  openCircuitBreakers Int              @default(0)
+  
+  // Actions
+  reduceConcurrency   Boolean          @default(false)
+  pauseDispatches     Boolean          @default(false)
+  stopRetries         Boolean          @default(false)
+  
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  
+  @@unique([id])
+}
+
+enum BackpressureMode {
+  NORMAL
+  DEGRADED
+  PROTECTIVE
+}
+
+model CircuitBreaker {
+  provider            String         @id
+  state               CircuitState   @default(CLOSED)
+  failureCount        Int            @default(0)
+  successCount        Int            @default(0)
+  lastFailureTime     DateTime?
+  lastStateChange     DateTime       @default(now())
+  nextRetryTime       DateTime?
+  testRequestsAllowed Int            @default(0)
+  testRequestsUsed    Int            @default(0)
+  reason              String?
+  
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  
+  @@index([state])
+}
+
+enum CircuitState {
+  CLOSED
+  OPEN
+  HALF_OPEN
+}
+
+model ProviderHealthMetric {
+  id          String   @id @default(uuid())
+  provider    String
+  success     Boolean
+  timeout     Boolean
+  conflict    Boolean
+  latencyMs   Int
+  statusCode  String?
+  errorMessage String?
+  timestamp   DateTime @default(now())
+  
+  @@index([provider, timestamp])
+  @@index([provider, success, timestamp])
+}
+
+// ============================================================================
+// PROJECTIONS & AUDIT (NOT FOR EXECUTION DECISIONS)
+// ============================================================================
+
+model ProviderLedger {
+  id                    String        @id @default(uuid())
+  deliveryStateId       String        @unique
+  deliveryState         DeliveryState @relation(fields: [deliveryStateId], references: [id], onDelete: Cascade)
+  
+  provider              String
+  idempotencyKey        String
+  payloadHash           String
+  requestPayload        Json
+  dispatchedAt          DateTime?
+  dispatchedBy          String?
+  providerTransactionId String?
+  providerResponse      Json?
+  externalState         String
+  resolvedAt            DateTime?
+  resolutionSource      String?
+  
+  createdAt             DateTime      @default(now())
+  
+  @@index([provider, externalState, dispatchedAt])
+}
+
+model DeadLetterQueue {
+  id              String        @id @default(uuid())
+  deliveryStateId String        @unique
+  deliveryState   DeliveryState @relation(fields: [deliveryStateId], references: [id], onDelete: Cascade)
+  
+  reason          String
+  severity        String        @default("HIGH")
+  originalState   String
+  ledgerSnapshot  Json?
+  lastError       String?
+  retryHistory    Json?
+  canReplay       Boolean       @default(false)
+  replayCount     Int           @default(0)
+  maxReplays      Int           @default(3)
+  
+  status          String        @default("PENDING")
+  resolvedBy      String?
+  resolution      String?
+  resolvedAt      DateTime?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  @@index([status, createdAt])
+  @@index([reason, severity])
+}
+
+model ManualReviewQueue {
+  id              String        @id @default(uuid())
+  deliveryStateId String        @unique
+  deliveryState   DeliveryState @relation(fields: [deliveryStateId], references: [id], onDelete: Cascade)
+  
+  reason          String
+  status          String        @default("PENDING")
+  priority        String        @default("NORMAL")
+  notes           String?
+  resolution      String?
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  @@index([status, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  eventType   String
+  targetType  String
+  targetId    String
+  oldState    Json?
+  newState    Json?
+  details     String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  
+  @@index([targetType, targetId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+// ============================================================================
+// DOMAIN MODELS (PROJECTIONS ONLY)
+// ============================================================================
+
+model Order {
+  id                 String        @id @default(cuid())
+  orderNumber        String        @unique
+  gameId             String
+  game               Game          @relation(fields: [gameId], references: [id])
+  productId          String
+  product            Product       @relation(fields: [productId], references: [id])
+  playerUid          String
+  serverId           String?
+  playerNickname     String?
+  customerEmail      String?
+  customerPhone      String?
+  amountUsd          Float
+  amountKhr          Float?
+  currency           String        @default("USD")
+  paymentMethod      String
+  paymentRef         String?
+  paymentRefEnc      String?
+  qrString           String?
+  paymentExpiresAt   DateTime?
+  
+  // PROJECTION from DeliveryState (not for decisions)
+  status             String        @default("PENDING")
+  deliveryStatus     String?
+  
+  ipAddress          String?
+  userAgent          String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  paidAt             DateTime?
+  deliveredAt        DateTime?
+  
+  userId             String?
+  user               User?         @relation(fields: [userId], references: [id], name: "OrderUser")
+  deliveryState      DeliveryState?
+  
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Game {
+  id             String    @id @default(cuid())
+  slug           String    @unique
+  name           String
+  publisher      String
+  description    String?
+  imageUrl       String
+  bannerUrl      String?
+  currencyName   String
+  uidLabel       String    @default("Player ID")
+  uidExample     String?
+  requiresServer Boolean   @default(false)
+  servers        String    @default("[]")
+  featured       Boolean   @default(false)
+  active         Boolean   @default(true)
+  sortOrder      Int       @default(0)
+  products       Product[]
+  orders         Order[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([active, featured, sortOrder])
+  @@index([active, slug])
+}
+
+model Product {
+  id                    String   @id @default(cuid())
+  gameId                String
+  game                  Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  name                  String
+  amount                Int
+  bonus                 Int      @default(0)
+  priceUsd              Float
+  resellerPriceUsd      Float?
+  officialPriceUsd      Float?
+  priceKhr              Float?
+  salePriceUsd          Float?
+  saleEndsAt            DateTime?
+  isMysteryBox          Boolean  @default(false)
+  isSubscriptionAvailable Boolean @default(false)
+  badge                 String?
+  imageUrl              String?
+  active                Boolean  @default(true)
+  sortOrder             Int      @default(0)
+  gameDropOfferId       Int?
+  g2bulkCatalogueName   String?
+  orders                Order[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([gameId, active])
+  @@unique([gameId, name])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  name          String?
+  image         String?
+  role          String    @default("USER")
+  walletBalance Float     @default(0)
+  orders        Order[]   @relation("OrderUser")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}

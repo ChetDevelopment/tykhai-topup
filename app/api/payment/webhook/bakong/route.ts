@@ -4,13 +4,14 @@ export const dynamic = "force-dynamic";
 import {
   checkBakongPayment,
   validatePaymentAmount,
-  markOrderPaid,
 } from "@/lib/payment";
 import { notifyTelegram, escapeHtml } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
 import { sanitizeInput, isSuspiciousRequest, logSecurityEvent } from "@/lib/security";
 import { hashSha256, verifyWebhookSignature } from "@/lib/encryption";
 import { z } from "zod";
+import { markOrderAsPaid } from "@/lib/payment-state-machine";
+import { startPaymentWorker } from "@/lib/payment-worker";
 
 // Webhook replay protection
 const recentWebhookCache = new Set<string>();
@@ -39,7 +40,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const rawBodyString = JSON.stringify(body);
 
-    console.log("[webhook] Received webhook:", { body: rawBodyString });
+    console.log("[webhook] ======= WEBHOOK RECEIVED =======");
+    console.log("[webhook] Body:", rawBodyString);
+    console.log("[webhook] Headers:", Object.fromEntries(req.headers.entries()));
 
     const parseResult = WebhookSchema.safeParse(body);
     if (!parseResult.success) {
@@ -110,21 +113,19 @@ export async function POST(req: NextRequest) {
     } : "NOT FOUND");
 
     if (!order) {
+      console.log("[webhook] Order not found for MD5:", md5Hash);
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
     }
 
-    // CRITICAL: Verify MD5 matches exactly
     const storedMd5 = (order as any).metadata?.bakongMd5;
     console.log("[webhook] MD5 Comparison:", {
       receivedMd5: md5Hash,
       storedMd5: storedMd5,
       match: md5Hash === storedMd5,
-      receivedLength: md5Hash?.length,
-      storedLength: storedMd5?.length,
     });
 
     if (storedMd5 && md5Hash !== storedMd5) {
-      console.error("[webhook] MD5 MISMATCH!", { received: md5Hash, stored: storedMd5 });
+      console.error(`[webhook] CRITICAL: MD5 MISMATCH for order ${order.orderNumber}! Received: ${md5Hash}, Stored: ${storedMd5}`);
       await logSecurityEvent("WEBHOOK_MD5_MISMATCH", {
         orderNumber: order.orderNumber,
         receivedMd5: md5Hash,
@@ -133,95 +134,56 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "MD5 mismatch" }, { status: 400 });
     }
 
-    if (order.status === "PAID" || order.status === "QUEUED" || order.status === "DELIVERING" || order.status === "DELIVERED") {
+    // Check if already paid (idempotency)
+    if (["PAID", "PROCESSING", "DELIVERED"].includes(order.status)) {
+      console.log("[webhook] Order already paid:", order.status);
       return NextResponse.json({ ok: true, skipped: true, reason: `already_${order.status}` });
     }
 
+    // Verify payment with Bakong API
     const bakongResult = await checkBakongPayment(md5Hash);
-
-    if (!bakongResult || !bakongResult.paid) {
-      return NextResponse.json({ status: "UNPAID" });
+    
+    if (!bakongResult.paid || bakongResult.status !== "PAID") {
+      console.log("[webhook] Payment not confirmed:", bakongResult);
+      return NextResponse.json({
+        status: "PENDING",
+        message: "Payment not yet confirmed",
+      }, { status: 200 });
     }
 
-    if (bakongResult.amount) {
-      const paidAmount = parseFloat(String(bakongResult.amount));
-      const validation = validatePaymentAmount(
-        order.amountUsd,
-        order.currency === "KHR" ? order.amountKhr : undefined,
-        paidAmount,
-        order.currency
-      );
-
-      if (!validation.valid) {
-        await logSecurityEvent("PAYMENT_AMOUNT_MISMATCH", {
-          orderNumber: order.orderNumber,
-          paidAmount,
-          expectedAmount: order.currency === "KHR" ? order.amountKhr : order.amountUsd,
-          currency: order.currency,
-          message: validation.message,
-        }, req);
-
-        await prisma.order.update({
-          where: { id: order.id },
-          data: { status: "FAILED", failureReason: `Payment amount mismatch: ${validation.message}` },
-        });
-
-        return NextResponse.json({ error: "Amount mismatch", status: "FAILED" }, { status: 400 });
-      }
-    }
-
-    if (validatedBody.toAccountId && validatedBody.toAccountId !== process.env.BAKONG_ACCOUNT) {
-      await logSecurityEvent("WEBHOOK_MERCHANT_MISMATCH", {
-        orderNumber: order.orderNumber,
-        expectedAccount: process.env.BAKONG_ACCOUNT,
-        receivedAccount: validatedBody.toAccountId,
-      }, req);
-
-      return NextResponse.json({ error: "Merchant account mismatch" }, { status: 400 });
-    }
-
-    const markResult = await markOrderPaid(order.id, {
+    // Payment confirmed - mark order as paid using state machine
+    const markResult = await markOrderAsPaid(order.id, {
       paymentRef: order.paymentRef || `WEBHOOK-${md5Hash.slice(0, 16)}`,
-      amount: bakongResult.amount ? parseFloat(String(bakongResult.amount)) : order.amountUsd,
-      currency: bakongResult.currency || order.currency,
-      transactionId: bakongResult.transactionId,
+      amount: order.currency === "KHR" ? (order.amountKhr || 0) : order.amountUsd,
+      currency: order.currency,
+      transactionId: validatedBody.transactionId || validatedBody.transaction_id || md5Hash,
       verifiedBy: "webhook",
     });
 
-    if (!markResult.success && markResult.status !== "QUEUED") {
-      return NextResponse.json({ status: markResult.status, message: markResult.message }, { status: 400 });
+    if (!markResult.success) {
+      console.error("[webhook] Failed to mark order as paid:", markResult.error);
+      return NextResponse.json({ 
+        status: "ERROR", 
+        message: markResult.error 
+      }, { status: 400 });
     }
 
-    if (payloadHash) {
-      recentWebhookCache.add(payloadHash);
-      if (recentWebhookCache.size > MAX_CACHE_SIZE) {
-        const iterator = recentWebhookCache.values();
-        for (let i = 0; i < MAX_CACHE_SIZE / 2; i++) {
-          const next = iterator.next();
-          if (!next.done) recentWebhookCache.delete(next.value);
-        }
-      }
-    }
+    console.log("[webhook] Order marked as PAID:", order.orderNumber);
 
-    await prisma.paymentLog.create({
-      data: {
-        orderId: order.id,
-        paymentRef: order.paymentRef,
-        event: "WEBHOOK_PROCESSED",
-        status: "SUCCESS",
-        amount: bakongResult.amount ? parseFloat(String(bakongResult.amount)) : undefined,
-        currency: bakongResult.currency || order.currency,
-        metadata: JSON.stringify({ payloadHash, timestamp: new Date().toISOString() }),
-      },
-    });
-
+    // Notify Telegram
     notifyTelegramPayment(order).catch(() => {});
+
+    // Trigger worker to process delivery (if not already running)
+    // This is fire-and-forget - worker runs continuously anyway
+    startPaymentWorker().catch(() => {});
 
     return NextResponse.json({
       status: "PAID",
       orderNumber: order.orderNumber,
       deliveryStatus: "QUEUED",
+      message: "Payment confirmed. Processing delivery.",
     });
+
   } catch (err) {
     await logSecurityEvent("WEBHOOK_ERROR", { error: String(err) }, req);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

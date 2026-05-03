@@ -196,32 +196,60 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!order) return;
 
+    // Don't poll if order is in terminal state
     if (TERMINAL.has(order.status) || order.status === "DELIVERED") {
-      if (pollRef.current) clearInterval(pollRef.current);
+      console.log("[checkout] Order in terminal state, not polling:", order.status);
       return;
     }
 
-    if (remainingMs !== null && remainingMs <= 0) {
-      if (pollRef.current) clearInterval(pollRef.current);
+    // Don't poll if already paid
+    if (SUCCESS_STATES.has(order.status)) {
+      console.log("[checkout] Order already paid, not polling:", order.status);
       return;
     }
 
-    const isFirstPoll = pollAttemptsRef.current === 0;
-    const delay = isFirstPoll ? INITIAL_DELAY_MS : POLL_INTERVAL_MS;
+    // Don't poll if expired (but still allow if payment might have gone through)
+    if (remainingMs !== null && remainingMs <= 0 && !SUCCESS_STATES.has(order.status)) {
+      console.log("[checkout] Payment window expired, stopping poll");
+      return;
+    }
 
-    pollRef.current = setInterval(() => {
-      pollAttemptsRef.current += 1;
+    // Prevent multiple poll instances - use a ref to track if polling is active
+    if (pollRef.current) {
+      console.log("[checkout] Polling already active, skipping setup");
+      return;
+    }
 
-      if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
-        if (pollRef.current) clearInterval(pollRef.current);
-        return;
-      }
+    console.log("[checkout] Starting poll...", { status: order.status, attempts: pollAttemptsRef.current });
 
+    // Start polling: first call after INITIAL_DELAY_MS, then every POLL_INTERVAL_MS
+    const timeout = setTimeout(() => {
       verifyPaymentStatus();
-    }, delay);
+      
+      pollRef.current = setInterval(() => {
+        pollAttemptsRef.current += 1;
+        console.log("[checkout] Poll attempt:", pollAttemptsRef.current);
 
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [order, verifyPaymentStatus, remainingMs]);
+        if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
+          console.log("[checkout] Max poll attempts reached");
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          return;
+        }
+
+        verifyPaymentStatus();
+      }, POLL_INTERVAL_MS);
+    }, INITIAL_DELAY_MS);
+
+    return () => {
+      console.log("[checkout] Cleaning up poll");
+      clearTimeout(timeout);
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [order?.orderNumber]); // ← REMOVED remainingMs from dependencies
 
   useEffect(() => {
     if (!order?.paymentExpiresAt) return;

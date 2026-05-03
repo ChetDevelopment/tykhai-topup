@@ -1,7 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { processDeliveryQueue, reconcileMissedPayments, acquireCronLock, releaseCronLock } from "@/lib/payment";
+import { processDeliveryQueue } from "@/lib/payment";
+import { runReconciliation } from "@/lib/reconciler";
 
 /**
  * POST /api/cron/process-deliveries
@@ -10,15 +11,21 @@ import { processDeliveryQueue, reconcileMissedPayments, acquireCronLock, release
  * Not the primary payment or delivery path.
  * 
  * PURPOSES:
- * 1. Process stuck delivery jobs (failed retries, crashed workers)
- * 2. Reconcile missed payments (webhook never arrived)
- * 3. Clean up expired locks
+ * 1. Process pending delivery jobs with safe retry logic
+ * 2. Reconcile UNKNOWN_EXTERNAL_STATE entries via provider APIs
+ * 3. Escalate unresolvable cases to manual review queue
  * 
  * SECURITY: Protected by CRON_SECRET env var
  * SAFETY: Uses execution lock to prevent overlapping runs
  * 
  * Called by Vercel Cron every 5 minutes.
  */
+
+// Simple in-memory lock for single-instance deployments
+let isRunning = false;
+let lastRunTime = 0;
+const LOCK_TIMEOUT_MS = 300000; // 5 minutes
+
 export async function POST(req: NextRequest) {
   // Auth check
   const cronSecret = process.env.CRON_SECRET;
@@ -31,28 +38,29 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Acquire cron execution lock
-  const lockAcquired = await acquireCronLock();
-  if (!lockAcquired) {
+  // Prevent overlapping runs
+  const now = Date.now();
+  if (isRunning && (now - lastRunTime) < LOCK_TIMEOUT_MS) {
     return NextResponse.json({
       success: false,
-      reason: "Another cron instance is running",
+      reason: "Another instance is running",
       skipped: true,
     });
   }
 
+  isRunning = true;
+  lastRunTime = now;
+
   try {
     const results: Record<string, unknown> = {};
 
-    // 1. Process pending delivery jobs
+    // 1. Process pending delivery jobs (safe retry logic)
     const deliveryResults = await processDeliveryQueue(20);
     results.delivery = deliveryResults;
 
-    // 2. Reconcile missed payments (only if few deliveries processed)
-    if (deliveryResults.processed < 5) {
-      const reconcileResults = await reconcileMissedPayments();
-      results.reconciliation = reconcileResults;
-    }
+    // 2. Reconcile unknown/ambiguous states
+    const reconcileResults = await runReconciliation();
+    results.reconciliation = reconcileResults;
 
     return NextResponse.json({
       success: true,
@@ -60,12 +68,13 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    console.error('[cron] Error:', error);
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
     }, { status: 500 });
   } finally {
-    await releaseCronLock();
+    isRunning = false;
   }
 }
 
@@ -74,7 +83,7 @@ export async function GET() {
   return NextResponse.json({
     status: "ok",
     endpoint: "/api/cron/process-deliveries",
-    description: "Background delivery worker (recovery only)",
+    description: "Background delivery worker + reconciler (recovery only)",
     usage: "POST with Authorization: Bearer <CRON_SECRET>",
   });
 }

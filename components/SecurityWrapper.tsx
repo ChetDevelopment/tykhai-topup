@@ -44,7 +44,7 @@ export default function SecurityWrapper({ children }: { children: React.ReactNod
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!isSensitive) return;
 
-    // Block PrintScreen
+    // Block PrintScreen only (allow DevTools and other shortcuts)
     if (e.key === "PrintScreen") {
       e.preventDefault();
       try {
@@ -55,16 +55,15 @@ export default function SecurityWrapper({ children }: { children: React.ReactNod
       triggerWarning();
     }
 
-    // Block Shortcuts
+    // Allow F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+U for debugging
+    // Only block screenshot-related shortcuts
     const metaOrCtrl = e.ctrlKey || e.metaKey;
     const shift = e.shiftKey;
     const key = e.key.toLowerCase();
 
     if (
       (metaOrCtrl && (key === "c" || key === "u" || key === "p" || key === "s")) ||
-      (metaOrCtrl && shift && (key === "s" || key === "i" || key === "j" || key === "c")) ||
-      e.key === "F12" ||
-      (e.altKey && e.key === "PrintScreen")
+      (metaOrCtrl && shift && (key === "s"))
     ) {
       e.preventDefault();
       triggerWarning();
@@ -114,14 +113,14 @@ export default function SecurityWrapper({ children }: { children: React.ReactNod
       window.addEventListener("focus", handleFocus);
       window.addEventListener("dragstart", handleDragStart);
 
-      // DevTools detection (basic)
-      const checkDevTools = () => {
-        const threshold = 160;
-        if (window.outerWidth - window.innerWidth > threshold || window.outerHeight - window.innerHeight > threshold) {
-          setIsBlurred(true);
-        }
-      };
-      const interval = setInterval(checkDevTools, 1000);
+      // DevTools detection - DISABLED for debugging
+      // const checkDevTools = () => {
+      //   const threshold = 160;
+      //   if (window.outerWidth - window.innerWidth > threshold || window.outerHeight - window.innerHeight > threshold) {
+      //     setIsBlurred(true);
+      //   }
+      // };
+      // const interval = setInterval(checkDevTools, 1000);
 
       return () => {
         window.removeEventListener("keydown", handleKeyDown);
@@ -131,7 +130,7 @@ export default function SecurityWrapper({ children }: { children: React.ReactNod
         window.removeEventListener("blur", handleBlur);
         window.removeEventListener("focus", handleFocus);
         window.removeEventListener("dragstart", handleDragStart);
-        clearInterval(interval);
+        // clearInterval(interval);
       };
     }
   }, [isSensitive, handleKeyDown, handleContextMenu, handleCopy, handleVisibilityChange, handleBlur, handleFocus, handleDragStart]);
