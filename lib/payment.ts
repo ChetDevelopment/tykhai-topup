@@ -89,7 +89,13 @@ export async function initiatePayment(args: InitiatePaymentArgs): Promise<Paymen
 }
 
 async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
+  console.log("[Bakong] Checking credentials...");
+  console.log("[Bakong] BAKONG_ACCOUNT:", BAKONG_ACCOUNT ? "SET" : "MISSING");
+  console.log("[Bakong] BAKONG_MERCHANT_NAME:", BAKONG_MERCHANT_NAME ? "SET" : "MISSING");
+  console.log("[Bakong] BAKONG_MERCHANT_CITY:", BAKONG_MERCHANT_CITY || "Phnom Penh");
+  
   if (!BAKONG_ACCOUNT || !BAKONG_MERCHANT_NAME) {
+    console.error("[Bakong] Configuration error - missing credentials!");
     throw PaymentError.configurationError("Bakong");
   }
 
