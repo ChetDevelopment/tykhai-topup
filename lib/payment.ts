@@ -280,8 +280,17 @@ export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerifi
       const data = result.data ?? result.result ?? result.transaction ?? result;
 
       if (responseCode === 0 && data) {
-        const status = String(data.status ?? data.state ?? data.transactionStatus ?? "").toUpperCase();
-        const isPaid = status === "PAID" || status === "COMPLETED" || status === "SUCCESS" || data.paymentStatus === "PAID";
+        // Check payment status - Bakong API may return status in different fields
+        const status = String(data.status ?? data.state ?? data.transactionStatus ?? data.paymentStatus ?? "").toUpperCase();
+        
+        // Payment is confirmed if:
+        // 1. Status field says PAID/COMPLETED/SUCCESS, OR
+        // 2. acknowledgedDateMs exists (payment was acknowledged by receiver)
+        const isPaid = 
+          status === "PAID" || 
+          status === "COMPLETED" || 
+          status === "SUCCESS" ||
+          (data.acknowledgedDateMs && typeof data.acknowledgedDateMs === 'number');
 
         return {
           status: isPaid ? "PAID" : "PENDING",
