@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
   const startTime = Date.now();
   const orderNumber = req.nextUrl.searchParams.get("orderNumber");
 
+  console.log(`[Payment Status] Request received for order: ${orderNumber}`);
+
   if (!orderNumber) {
     return NextResponse.json(
       { error: "orderNumber parameter is required", code: "INVALID_INPUT" },

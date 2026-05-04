@@ -259,7 +259,10 @@ async function bakongApiRequest(endpoint: string, payload: unknown): Promise<any
 }
 
 export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerificationResult> {
+  console.log("[Bakong Check] Checking payment status for MD5:", md5Hash);
+  
   if (SIM_MODE) {
+    console.log("[Bakong Check] Simulation mode - returning mock paid");
     return {
       status: "PAID",
       paid: true,
@@ -270,7 +273,10 @@ export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerifi
     };
   }
 
-  if (!BAKONG_TOKEN) throw PaymentError.configurationError("Bakong");
+  if (!BAKONG_TOKEN) {
+    console.error("[Bakong Check] Missing BAKONG_TOKEN");
+    throw PaymentError.configurationError("Bakong");
+  }
 
   if (!md5Hash || md5Hash.length !== 32) {
     return { status: "FAILED", paid: false, message: `Invalid MD5 hash` };
