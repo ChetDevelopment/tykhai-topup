@@ -1,0 +1,11 @@
+{
+  "env": {
+    "BAKONG_ACCOUNT": "vichet_sat@bkrt",
+    "BAKONG_MERCHANT_NAME": "Ty Khai TopUp",
+    "BAKONG_MERCHANT_CITY": "Phnom Penh",
+    "BAKONG_TOKEN": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJkYXRhIjp7ImlkIjoiZjhkNzdjOTQ0NTExNDUwYSJ9LCJpYXQiOjE3NzY3NTQ1MzYsImV4cCI6MTc4NDUzMDUzNn0.MXQLXOROy9aykrpQ-D__RRDNaAtylhGW9z-JZMXk7YY",
+    "ENABLE_DEV_BAKONG": "false",
+    "PAYMENT_SIMULATION_MODE": "false"
+  },
+  "environment": "production"
+}

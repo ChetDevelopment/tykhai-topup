@@ -218,6 +218,11 @@ export default function AdminSettingsPage() {
                   {testResult.success ? `✓ Balance: $${testResult.balance}` : `✗ ${testResult.error}`}
                 </span>
               )}
+              {testResult?.details && (
+                <pre className="text-xs text-red-400 mt-2 bg-royal-surface p-2 rounded overflow-auto max-h-32">
+                  {JSON.stringify(testResult.details, null, 2)}
+                </pre>
+              )}
             </div>
           </div>
         </div>
@@ -250,6 +255,11 @@ export default function AdminSettingsPage() {
                 <span className={`text-xs ml-2 ${testG2BulkResult.success ? "text-green-400" : "text-red-400"}`}>
                   {testG2BulkResult.success ? `✓ Balance: $${testG2BulkResult.balance}` : `✗ ${testG2BulkResult.error}`}
                 </span>
+              )}
+              {testG2BulkResult?.details && (
+                <pre className="text-xs text-red-400 mt-2 bg-royal-surface p-2 rounded overflow-auto max-h-32">
+                  {JSON.stringify(testG2BulkResult.details, null, 2)}
+                </pre>
               )}
             </div>
           </div>

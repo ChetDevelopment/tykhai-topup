@@ -1,5 +1,3 @@
-// Prisma schema for Ty Khai TopUp
-// Production: PostgreSQL on Neon
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "rhel-openssl-3.0.x"]
@@ -11,136 +9,131 @@ datasource db {
 }
 
 model Game {
-  id          String    @id @default(cuid())
-  slug        String    @unique
-  name        String
-  publisher   String
-  description String?
-  imageUrl    String
-  bannerUrl   String?
-  currencyName String
-  uidLabel    String   @default("Player ID")
-  uidExample  String?
-  requiresServer Boolean @default(false)
-  servers     String    @default("[]")
-  featured    Boolean   @default(false)
-  active      Boolean   @default(true)
-  sortOrder   Int       @default(0)
+  id             String     @id @default(cuid())
+  slug           String     @unique
+  name           String
+  publisher      String
+  description    String?
+  imageUrl       String
+  bannerUrl      String?
+  currencyName   String
+  uidLabel       String     @default("Player ID")
+  uidExample     String?
+  requiresServer Boolean    @default(false)
+  servers        String     @default("[]")
+  featured       Boolean    @default(false)
+  active         Boolean    @default(true)
+  sortOrder      Int        @default(0)
   seoTitle       String?
   seoDescription String?
-  products    Product[]
-  orders      Order[]
-  savedUids   SavedUid[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  orders         Order[]
+  products       Product[]
+  savedUids      SavedUid[]
 
   @@index([active, featured, sortOrder])
   @@index([active, slug])
 }
 
 model Product {
-  id              String   @id @default(cuid())
-  gameId          String
-  game            Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  name            String
-  amount          Int
-  bonus           Int      @default(0)
-  priceUsd        Float
-  resellerPriceUsd Float?
-  officialPriceUsd Float?
-  priceKhr        Float?
-  salePriceUsd     Float?
-  saleEndsAt       DateTime?
-  isMysteryBox    Boolean  @default(false)
-  isSubscriptionAvailable Boolean @default(false)
-  badge           String?
-  imageUrl        String?
-  active          Boolean  @default(true)
-  sortOrder       Int      @default(0)
-  // GameDrop integration
-  gameDropOfferId Int?    // Maps to GameDrop offer ID for auto-delivery
-  // G2Bulk integration (for Free Fire SG/MY)
-  g2bulkCatalogueName String? // Maps to G2Bulk catalogue name (e.g., "100", "310")
-  orders          Order[]
-  reviews         Review[]
-  rewards         MysteryBoxReward[]
-  wishlists       Wishlist[]
-  priceAlerts     PriceAlert[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                      String             @id @default(cuid())
+  gameId                  String
+  name                    String
+  amount                  Int
+  bonus                   Int                @default(0)
+  priceUsd                Float
+  resellerPriceUsd        Float?
+  officialPriceUsd        Float?
+  priceKhr                Float?
+  salePriceUsd            Float?
+  saleEndsAt              DateTime?
+  isMysteryBox            Boolean            @default(false)
+  isSubscriptionAvailable Boolean            @default(false)
+  badge                   String?
+  imageUrl                String?
+  active                  Boolean            @default(true)
+  sortOrder               Int                @default(0)
+  gameDropOfferId         Int?
+  g2bulkCatalogueName     String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  rewards                 MysteryBoxReward[]
+  orders                  Order[]
+  priceAlerts             PriceAlert[]
+  game                    Game               @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  reviews                 Review[]
+  wishlists               Wishlist[]
 
-  @@index([gameId, active])
   @@unique([gameId, name])
+  @@index([gameId, active])
 }
 
 model Order {
-  id                 String       @id @default(cuid())
-  orderNumber        String       @unique
-  gameId             String
-  game               Game         @relation(fields: [gameId], references: [id])
-  productId          String
-  product            Product      @relation(fields: [productId], references: [id])
-  playerUid          String
-  serverId           String?
-  playerNickname     String?
-  customerEmail      String?
-  customerPhone      String?
-  amountUsd          Float
-  amountKhr          Float?
-  currency           String       @default("USD")
-  paymentMethod      String
-  paymentRef         String?
-  paymentRefEnc      String?
-  paymentUrl         String?
-  qrString           String?
-  paymentExpiresAt   DateTime?
-  status             String       @default("PENDING") // PENDING, PAID, PROCESSING, QUEUED, DELIVERING, DELIVERED, FAILED, FAILED_RETRY, FAILED_FINAL, CANCELLED, EXPIRED
-  deliveryStatus     String?      // QUEUED, DELIVERING, DELIVERED, FAILED_RETRY, FAILED_FINAL
-  deliveryNote       String?
-  failureReason      String?
-  // Distributed locking
-  lockUntil          DateTime?    // Lock expiration time
-  lockedBy           String?      // Process identifier holding the lock
-  version            Int          @default(0) // Optimistic concurrency control / Fencing
-  ipAddress          String?
-  userAgent          String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-  paidAt             DateTime?
-  deliveredAt        DateTime?
-  promoCodeId        String?
-  promoCode          PromoCode?  @relation(fields: [promoCodeId], references: [id])
-  discountUsd        Float        @default(0)
-  pointsEarned       Int          @default(0)
-  pointsUsed         Int          @default(0)
-  isSubscription     Boolean      @default(false)
-  squadPoolId        String?
-  squadPool          SquadPool?   @relation(fields: [squadPoolId], references: [id])
-
-  deliveryAttempts  Int          @default(0)
-  maxDeliveryAttempts Int          @default(3)
-  lastDeliveryAt    DateTime?
-  nextDeliveryAt    DateTime?
-  walletReserved    Float        @default(0)
-  refundStatus      String?
-  refundReason      String?
-  refundAmount      Float?
-  refundAt          DateTime?
-  fraudScore        Float        @default(0)
-  fraudFlags        String       @default("[]")
-  idempotencyKey    String?      @unique
-
-  userId             String?
-  user               User?        @relation(fields: [userId], references: [id], name: "OrderUser")
-  review             Review?
-  tickets            Ticket[]
-  paymentLogs        PaymentLog[]
-  deliveryLogs      DeliveryLog[]
-  deliveryJobs      DeliveryJob[]
-  refunds            Refund[]       @relation("OrderRefunds")
-  walletReservations WalletReservation[] @relation("OrderWalletReservations")
-  fraudFlags2       FraudFlag[]    @relation("OrderFraudFlags")
-  metadata           Json         @default("{}")
+  id                  String              @id @default(cuid())
+  orderNumber         String              @unique
+  gameId              String
+  productId           String
+  playerUid           String
+  serverId            String?
+  playerNickname      String?
+  customerEmail       String?
+  customerPhone       String?
+  amountUsd           Float
+  amountKhr           Float?
+  currency            String              @default("USD")
+  paymentMethod       String
+  paymentRef          String?
+  paymentRefEnc       String?
+  paymentUrl          String?
+  qrString            String?
+  paymentExpiresAt    DateTime?
+  status              String              @default("PENDING")
+  deliveryStatus      String?
+  deliveryNote        String?
+  failureReason       String?
+  lockUntil           DateTime?
+  lockedBy            String?
+  version             Int                 @default(0)
+  ipAddress           String?
+  userAgent           String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  paidAt              DateTime?
+  deliveredAt         DateTime?
+  promoCodeId         String?
+  discountUsd         Float               @default(0)
+  pointsEarned        Int                 @default(0)
+  pointsUsed          Int                 @default(0)
+  isSubscription      Boolean             @default(false)
+  squadPoolId         String?
+  deliveryAttempts    Int                 @default(0)
+  maxDeliveryAttempts Int                 @default(3)
+  lastDeliveryAt      DateTime?
+  nextDeliveryAt      DateTime?
+  walletReserved      Float               @default(0)
+  refundStatus        String?
+  refundReason        String?
+  refundAmount        Float?
+  refundAt            DateTime?
+  fraudScore          Float               @default(0)
+  fraudFlags          String              @default("[]")
+  idempotencyKey      String?             @unique
+  userId              String?
+  metadata            Json                @default("{}")
+  deliveryJobs        DeliveryJob[]
+  deliveryLogs        DeliveryLog[]
+  fraudFlags2         FraudFlag[]         @relation("OrderFraudFlags")
+  game                Game                @relation(fields: [gameId], references: [id])
+  product             Product             @relation(fields: [productId], references: [id])
+  promoCode           PromoCode?          @relation(fields: [promoCodeId], references: [id])
+  squadPool           SquadPool?          @relation(fields: [squadPoolId], references: [id])
+  user                User?               @relation("OrderUser", fields: [userId], references: [id])
+  paymentLogs         PaymentLog[]
+  refunds             Refund[]            @relation("OrderRefunds")
+  review              Review?
+  tickets             Ticket[]
+  walletReservations  WalletReservation[] @relation("OrderWalletReservations")
 
   @@index([status])
   @@index([createdAt])
@@ -148,227 +141,220 @@ model Order {
 }
 
 model PaymentLog {
-  id                String   @id @default(cuid())
-  orderId           String
-  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  event             String
-  status            String
-  paymentRef        String?
-  amount            Float?
-  currency          String?
-  provider          String?
-  responseCode      String?
-  responseMessage   String?
-  rawResponse       String?
-  metadata         Json   @default("{}")
-  createdAt         DateTime @default(now())
+  id              String   @id @default(cuid())
+  orderId         String
+  event           String
+  status          String
+  paymentRef      String?
+  amount          Float?
+  currency        String?
+  provider        String?
+  responseCode    String?
+  responseMessage String?
+  rawResponse     String?
+  metadata        Json     @default("{}")
+  createdAt       DateTime @default(now())
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([createdAt])
 }
 
 model DeliveryLog {
-  id                String   @id @default(cuid())
-  orderId           String
-  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  attemptNumber     Int      @default(1)
-  status            String
-  deliveryMethod    String?
-  requestPayload    String?
-  responsePayload   String?
-  errorMessage      String?
-  durationMs        Int?
-  nextRetryAt       DateTime?
-  createdAt         DateTime @default(now())
+  id              String    @id @default(cuid())
+  orderId         String
+  attemptNumber   Int       @default(1)
+  status          String
+  deliveryMethod  String?
+  requestPayload  String?
+  responsePayload String?
+  errorMessage    String?
+  durationMs      Int?
+  nextRetryAt     DateTime?
+  createdAt       DateTime  @default(now())
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([status])
 }
 
-// Queue-based delivery job system
-// Jobs are enqueued when order becomes PAID, processed asynchronously by worker
 model DeliveryJob {
-  id                String   @id @default(cuid())
-  orderId           String
-  order             Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  status            String   @default("PENDING") // PENDING, DISPATCHED, SUCCESS, FAILED, UNKNOWN_EXTERNAL_STATE, MANUAL_REVIEW, RETRYING
-  attempt           Int      @default(0)
-  maxAttempts       Int      @default(3)
-  nextAttemptAt     DateTime? // When to retry (exponential backoff)
-  startedAt         DateTime?
-  completedAt       DateTime?
-  errorMessage      String?
-  providerResponse  String?   // JSON from GameDrop/G2Bulk
-  workerId          String?   // Fencing token
-  providerLedger    ProviderLedger? // One-to-one relation (ledger has the FK)
-  manualReview      ManualReviewQueue? // One-to-one relation
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               String             @id @default(cuid())
+  orderId          String
+  status           String             @default("PENDING")
+  attempt          Int                @default(0)
+  maxAttempts      Int                @default(3)
+  nextAttemptAt    DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  errorMessage     String?
+  providerResponse String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  workerId         String?
+  deadLetterQueue  DeadLetterQueue?
+  order            Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  manualReview     ManualReviewQueue?
+  providerLedger   ProviderLedger?
 
   @@index([status, nextAttemptAt])
   @@index([orderId, status])
   @@index([createdAt])
 }
 
-// Write-ahead log for ALL external provider calls
-// Created BEFORE dispatch, updated AFTER response
-// Survives worker crash mid-flight
 model ProviderLedger {
-  id                    String   @id @default(uuid())
-  deliveryJobId         String   @unique
-  deliveryJob           DeliveryJob @relation(fields: [deliveryJobId], references: [id], onDelete: Cascade)
-  provider              String   // GAMEDROP | G2BULK
-  idempotencyKey        String   @unique
-  payloadHash           String   // sha256 of request body (prevents payload drift)
-  requestPayload        Json     // Full request sent to provider
+  id                    String           @id @default(uuid())
+  deliveryJobId         String           @unique
+  provider              String
+  idempotencyKey        String           @unique
+  payloadHash           String
+  requestPayload        Json
   dispatchedAt          DateTime?
-  dispatchedBy          String?  // WorkerId that dispatched
-  providerTransactionId String?  // Provider's transaction ID (set after response)
-  providerResponse      Json?    // Full response from provider
-  externalState         String   @default("UNKNOWN") // UNKNOWN | DISPATCHED | SUCCESS | FAILED | AMBIGUOUS
+  dispatchedBy          String?
+  providerTransactionId String?
+  providerResponse      Json?
+  externalState         String           @default("UNKNOWN")
   resolvedAt            DateTime?
   resolvedBy            String?
-  resolutionSource      String?  // API_RESPONSE | RECONCILIATION | MANUAL
-  createdAt             DateTime @default(now())
+  resolutionSource      String?
+  createdAt             DateTime         @default(now())
+  deadLetterQueue       DeadLetterQueue?
+  deliveryJob           DeliveryJob      @relation(fields: [deliveryJobId], references: [id], onDelete: Cascade)
 
   @@index([externalState, dispatchedAt])
   @@index([provider, idempotencyKey])
   @@index([resolutionSource])
 }
 
-// Manual review queue for unresolvable states
 model ManualReviewQueue {
-  id            String   @id @default(uuid())
-  deliveryJobId String   @unique
-  deliveryJob   DeliveryJob @relation(fields: [deliveryJobId], references: [id], onDelete: Cascade)
-  reason        String   // NO_STATUS_API | AMBIGUOUS | PAYLOAD_DRIFT | CUSTOMER_DISPUTE | PROVIDER_ERROR
-  status        String   @default("PENDING") // PENDING | ASSIGNED | RESOLVED | ESCALATED
+  id            String      @id @default(uuid())
+  deliveryJobId String      @unique
+  reason        String
+  status        String      @default("PENDING")
   assignedTo    String?
-  priority      String   @default("NORMAL") // NORMAL | HIGH | CRITICAL
+  priority      String      @default("NORMAL")
   notes         String?
-  resolution    String?  // Notes from human operator
+  resolution    String?
   resolvedBy    String?
   resolvedAt    DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deliveryJob   DeliveryJob @relation(fields: [deliveryJobId], references: [id], onDelete: Cascade)
 
   @@index([status, createdAt])
   @@index([reason, status])
 }
 
-// Dead Letter Queue for permanently failed or corrupted jobs
 model DeadLetterQueue {
-  id              String   @id @default(uuid())
-  deliveryJobId   String   @unique
-  deliveryJob     DeliveryJob @relation(fields: [deliveryJobId], references: [id], onDelete: Cascade)
-  providerLedgerId String?
-  providerLedger  ProviderLedger? @relation(fields: [providerLedgerId], references: [id])
-  reason          String   // PERMANENT_FAILURE | CORRUPTED_PAYLOAD | PROVIDER_INCONSISTENT | UNKNOWN_TIMEOUT | MANUAL_FINAL
-  severity        String   @default("HIGH") // LOW | MEDIUM | HIGH | CRITICAL
-  originalState   String   // State when moved to DLQ
-  ledgerSnapshot  Json?    // Full ledger snapshot at time of DLQ
-  lastError       String?
-  retryHistory    Json?    // Array of retry attempts
-  canReplay       Boolean  @default(false) // Whether job can be safely replayed
-  replayCount     Int      @default(0) // Number of replay attempts
-  maxReplays      Int      @default(3) // Maximum replay attempts
-  status          String   @default("PENDING") // PENDING | INVESTIGATING | RESOLVED | ARCHIVED
-  resolvedBy      String?
-  resolution      String?
-  resolvedAt      DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String          @id @default(uuid())
+  deliveryJobId    String          @unique
+  providerLedgerId String?         @unique
+  reason           String
+  severity         String          @default("HIGH")
+  originalState    String
+  ledgerSnapshot   Json?
+  lastError        String?
+  retryHistory     Json?
+  canReplay        Boolean         @default(false)
+  replayCount      Int             @default(0)
+  maxReplays       Int             @default(3)
+  status           String          @default("PENDING")
+  resolvedBy       String?
+  resolution       String?
+  resolvedAt       DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deliveryJob      DeliveryJob     @relation(fields: [deliveryJobId], references: [id], onDelete: Cascade)
+  providerLedger   ProviderLedger? @relation(fields: [providerLedgerId], references: [id])
 
   @@index([status, createdAt])
   @@index([reason, severity])
   @@index([canReplay, status])
 }
 
-// Provider health metrics (rolling window)
 model ProviderHealthMetric {
-  id          String   @id @default(uuid())
-  provider    String   // GAMEDROP | G2BULK | BAKONG
-  success     Boolean
-  timeout     Boolean
-  conflict    Boolean  // 409 idempotency conflict
-  latencyMs   Int
-  statusCode  String?
+  id           String   @id @default(uuid())
+  provider     String
+  success      Boolean
+  timeout      Boolean
+  conflict     Boolean
+  latencyMs    Int
+  statusCode   String?
   errorMessage String?
-  timestamp   DateTime @default(now())
+  timestamp    DateTime @default(now())
 
   @@index([provider, timestamp])
   @@index([provider, success, timestamp])
   @@index([provider, timeout, timestamp])
 }
 
-// Circuit breaker state per provider
 model CircuitBreaker {
-  provider          String   @id // GAMEDROP | G2BULK | BAKONG
-  state             String   @default("CLOSED") // CLOSED | OPEN | HALF_OPEN
-  failureCount      Int      @default(0)
-  successCount      Int      @default(0)
-  lastFailureTime   DateTime?
-  lastStateChange   DateTime @default(now())
-  nextRetryTime     DateTime?
-  testRequestsAllowed Int    @default(0)
-  testRequestsUsed  Int      @default(0)
-  reason            String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  provider            String    @id
+  state               String    @default("CLOSED")
+  failureCount        Int       @default(0)
+  successCount        Int       @default(0)
+  lastFailureTime     DateTime?
+  lastStateChange     DateTime  @default(now())
+  nextRetryTime       DateTime?
+  testRequestsAllowed Int       @default(0)
+  testRequestsUsed    Int       @default(0)
+  reason              String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@index([state])
 }
 
 model AuditLog {
-  id          String   @id @default(cuid())
+  id         String   @id @default(cuid())
   adminEmail String?
-  action      String
+  action     String
   targetType String?
-  targetId    String?
-  details     String?
-  ipAddress   String?
-  userAgent   String?
-  createdAt   DateTime @default(now())
+  targetId   String?
+  details    String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
 
   @@index([createdAt])
   @@index([targetType, targetId])
 }
 
 model Refund {
-  id              String   @id @default(cuid())
-  orderId         String
-  order           Order     @relation("OrderRefunds", fields: [orderId], references: [id], onDelete: Cascade)
-  userId          String?
-  user            User?     @relation("UserRefunds", fields: [userId], references: [id])
-  amount          Float
-  currency        String   @default("USD")
-  reason          String?
-  status          String   @default("PENDING")
-  refundMethod    String?
-  transactionId   String?
-  processorFee    Float?
-  netAmount       Float?
-  requestedAt     DateTime @default(now())
-  processedAt     DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            String    @id @default(cuid())
+  orderId       String
+  userId        String?
+  amount        Float
+  currency      String    @default("USD")
+  reason        String?
+  status        String    @default("PENDING")
+  refundMethod  String?
+  transactionId String?
+  processorFee  Float?
+  netAmount     Float?
+  requestedAt   DateTime  @default(now())
+  processedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  order         Order     @relation("OrderRefunds", fields: [orderId], references: [id], onDelete: Cascade)
+  user          User?     @relation("UserRefunds", fields: [userId], references: [id])
 
   @@index([status])
   @@index([orderId])
 }
 
 model WalletReservation {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation("UserWalletReservations", fields: [userId], references: [id], onDelete: Cascade)
-  orderId         String?
-  order           Order?    @relation("OrderWalletReservations", fields: [orderId], references: [id])
-  amount          Float
-  currency        String   @default("USD")
-  status          String   @default("ACTIVE")
-  expiresAt       DateTime
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  orderId   String?
+  amount    Float
+  currency  String   @default("USD")
+  status    String   @default("ACTIVE")
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  order     Order?   @relation("OrderWalletReservations", fields: [orderId], references: [id])
+  user      User     @relation("UserWalletReservations", fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([orderId])
@@ -376,19 +362,19 @@ model WalletReservation {
 }
 
 model FraudFlag {
-  id              String   @id @default(cuid())
-  orderId         String?
-  order           Order?    @relation("OrderFraudFlags", fields: [orderId], references: [id])
-  userId          String?
-  user            User?    @relation("UserFraudFlags", fields: [userId], references: [id])
-  type            String
-  severity        String   @default("MEDIUM")
-  description     String?
-  metadata        Json?
-  isResolved      Boolean  @default(false)
-  resolvedById    String?
-  resolvedBy      User?    @relation("FraudResolver", fields: [resolvedById], references: [id])
-  createdAt       DateTime @default(now())
+  id           String   @id @default(cuid())
+  orderId      String?
+  userId       String?
+  type         String
+  severity     String   @default("MEDIUM")
+  description  String?
+  metadata     Json?
+  isResolved   Boolean  @default(false)
+  resolvedById String?
+  createdAt    DateTime @default(now())
+  order        Order?   @relation("OrderFraudFlags", fields: [orderId], references: [id])
+  resolvedBy   User?    @relation("FraudResolver", fields: [resolvedById], references: [id])
+  user         User?    @relation("UserFraudFlags", fields: [userId], references: [id])
 
   @@index([type])
   @@index([severity])
@@ -411,62 +397,58 @@ model PromoCode {
 }
 
 model Admin {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   passwordHash String
   name         String?
   role         String    @default("ADMIN")
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
   lastLoginAt  DateTime?
 }
 
 model Settings {
-  id          Int      @id @default(1)
-  siteName    String   @default("Ty Khai TopUp")
-  exchangeRate Float   @default(4100)
-  supportTelegram String? @default("@Vichet_SAT")
-  supportEmail String? @default("support@tykhai.com")
-  maintenanceMode Boolean @default(false)
-  maintenanceMessage String?
-  announcement String?
-  announcementTone String? @default("info")
-  popupActive      Boolean @default(false)
-  popupTitle       String?
-  popupContent     String?
-  popupImageUrl     String?
-  telegramBotToken String?
-  telegramChatId   String?
-  updatedAt   DateTime @updatedAt
-
-  // System Control
-  systemStatus      String   @default("ACTIVE")
-  pauseReason       String?
-  systemMode        String   @default("AUTO")
-
-  // Balance Monitoring
-  balanceCheckInterval Int     @default(5)
-  warningThreshold  Float?   @default(20.0)
-  criticalThreshold Float?   @default(5.0)
-  lastBalanceCheck  DateTime?
-  currentBalance    Float?
-  reservedBalance   Float    @default(0)
-  alertCooldownMinutes Int   @default(15)
-  lastAlertSentAt   DateTime?
-  gameDropToken     String?
-  gameDropPartnerId Int?
-  g2bulkToken       String?
-  g2bulkPartnerId   Int?
+  id                   Int       @id @default(1)
+  siteName             String    @default("Ty Khai TopUp")
+  exchangeRate         Float     @default(4100)
+  supportTelegram      String?   @default("@Vichet_SAT")
+  supportEmail         String?   @default("support@tykhai.com")
+  maintenanceMode      Boolean   @default(false)
+  maintenanceMessage   String?
+  announcement         String?
+  announcementTone     String?   @default("info")
+  popupActive          Boolean   @default(false)
+  popupTitle           String?
+  popupContent         String?
+  popupImageUrl        String?
+  telegramBotToken     String?
+  telegramChatId       String?
+  updatedAt            DateTime  @updatedAt
+  systemStatus         String    @default("ACTIVE")
+  pauseReason          String?
+  systemMode           String    @default("AUTO")
+  balanceCheckInterval Int       @default(5)
+  warningThreshold     Float?    @default(20.0)
+  criticalThreshold    Float?    @default(5.0)
+  lastBalanceCheck     DateTime?
+  currentBalance       Float?
+  reservedBalance      Float     @default(0)
+  alertCooldownMinutes Int       @default(15)
+  lastAlertSentAt      DateTime?
+  gameDropToken        String?
+  gameDropPartnerId    Int?
+  g2bulkToken          String?
+  g2bulkPartnerId      Int?
 }
 
 model BalanceLog {
   id        String   @id @default(cuid())
-  balance    Float
-  reserved   Float    @default(0)
-  available  Float
-  threshold  String?
-  source     String?
-  createdAt  DateTime @default(now())
+  balance   Float
+  reserved  Float    @default(0)
+  available Float
+  threshold String?
+  source    String?
+  createdAt DateTime @default(now())
 
   @@index([createdAt])
 }
@@ -492,7 +474,7 @@ model Faq {
   question  String
   answer    String
   category  String   @default("general")
-  active    Boolean   @default(true)
+  active    Boolean  @default(true)
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -525,40 +507,40 @@ model BlockedIdentity {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  emailVerified DateTime?
-  passwordHash  String?
-  name          String?
-  image         String?
-  role          String    @default("USER")
-  pointsBalance Int       @default(0)
-  walletBalance Float     @default(0)
-  totalSpentUsd Float     @default(0)
-  vipRank       String    @default("BRONZE")
-  resellerTier  String?
-  resellerDiscount Float   @default(0)
-  parentResellerId String?
-  parentReseller   User?  @relation("ResellerNetwork", fields: [parentResellerId], references: [id])
-  subResellers    User[]  @relation("ResellerNetwork")
-  referredById   String?
-  referredBy    User?     @relation("ReferralNetwork", fields: [referredById], references: [id])
-  referrer      User[]    @relation("ReferralNetwork")
-  referralEarnings Float   @default(0)
-  pushSubscription String?
-  accounts      Account[]
-  sessions      Session[]
-  savedUids     SavedUid[]
-  orders        Order[]    @relation("OrderUser")
-  points        PointTransaction[]
-  subscriptions Subscription[]
-  tickets       Ticket[]  @relation("UserTickets")
-  refunds            Refund[]           @relation("UserRefunds")
+  id                 String              @id @default(cuid())
+  email              String              @unique
+  emailVerified      DateTime?
+  passwordHash       String?
+  name               String?
+  image              String?
+  role               String              @default("USER")
+  pointsBalance      Int                 @default(0)
+  walletBalance      Float               @default(0)
+  totalSpentUsd      Float               @default(0)
+  vipRank            String              @default("BRONZE")
+  resellerTier       String?
+  resellerDiscount   Float               @default(0)
+  parentResellerId   String?
+  referredById       String?
+  referralEarnings   Float               @default(0)
+  pushSubscription   String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  accounts           Account[]
+  resolvedFlags      FraudFlag[]         @relation("FraudResolver")
+  fraudFlags         FraudFlag[]         @relation("UserFraudFlags")
+  orders             Order[]             @relation("OrderUser")
+  points             PointTransaction[]
+  refunds            Refund[]            @relation("UserRefunds")
+  savedUids          SavedUid[]
+  sessions           Session[]
+  subscriptions      Subscription[]
+  tickets            Ticket[]            @relation("UserTickets")
+  parentReseller     User?               @relation("ResellerNetwork", fields: [parentResellerId], references: [id])
+  subResellers       User[]              @relation("ResellerNetwork")
+  referredBy         User?               @relation("ReferralNetwork", fields: [referredById], references: [id])
+  referrer           User[]              @relation("ReferralNetwork")
   walletReservations WalletReservation[] @relation("UserWalletReservations")
-  fraudFlags        FraudFlag[]        @relation("UserFraudFlags")
-  resolvedFlags     FraudFlag[]        @relation("FraudResolver")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
 }
 
 model Account {
@@ -574,7 +556,8 @@ model Account {
   scope             String?
   id_token          String?
   session_state     String?
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([provider, providerAccountId])
 }
 
@@ -590,6 +573,7 @@ model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
+
   @@unique([identifier, token])
 }
 
@@ -598,33 +582,34 @@ model SavedUid {
   userId    String
   gameId    String
   playerUid String
-  user      User     @relation(fields: [userId], references: [id])
-  game      Game     @relation(fields: [gameId], references: [id])
   createdAt DateTime @default(now())
+  game      Game     @relation(fields: [gameId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
   @@unique([userId, gameId, playerUid])
 }
 
 model Review {
-  id          String   @id @default(cuid())
-  orderId     String   @unique
-  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  rating      Int      @default(5)
-  comment     String?
+  id           String   @id @default(cuid())
+  orderId      String   @unique
+  productId    String
+  rating       Int      @default(5)
+  comment      String?
   customerName String
-  isPublic    Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  isPublic     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product      Product  @relation(fields: [productId], references: [id])
 }
 
 model PointTransaction {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   amount    Int
   type      String
   orderId   String?
   createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model SquadPool {
@@ -635,105 +620,106 @@ model SquadPool {
   currentSize Int      @default(1)
   status      String   @default("OPEN")
   expiresAt   DateTime
-  orders      Order[]
   createdAt   DateTime @default(now())
+  orders      Order[]
 }
 
 model MysteryBoxReward {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   productId   String
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   name        String
   amount      Int
   probability Float
-  isJackpot   Boolean  @default(false)
+  isJackpot   Boolean @default(false)
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model Subscription {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  gameId      String
-  productId   String
+  id           String   @id @default(cuid())
+  userId       String
+  gameId       String
+  productId    String
   intervalDays Int      @default(7)
-  nextRunAt   DateTime
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  nextRunAt    DateTime
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Wishlist {
   id        String   @id @default(cuid())
   userId    String
   productId String
-  product    Product   @relation(fields: [productId], references: [id])
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id])
+
   @@unique([userId, productId])
 }
 
 model PriceAlert {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   userId      String
-  productId  String
-  product    Product  @relation(fields: [productId], references: [id])
+  productId   String
   targetPrice Float
-  notified    Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  notified    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
   expiresAt   DateTime?
+  product     Product   @relation(fields: [productId], references: [id])
+
   @@unique([userId, productId])
 }
 
 model Bundle {
-  id          String    @id @default(cuid())
-  name        String
-  description String?
-  products    String
-  bundlePrice Float
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  products      String
+  bundlePrice   Float
   originalPrice Float
-  badge       String?
-  active      Boolean   @default(true)
-  expiresAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  badge         String?
+  active        Boolean   @default(true)
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 }
 
 model SpinWin {
-  id          String   @id @default(cuid())
+  id         String   @id @default(cuid())
   userId     String
   prize      String
   prizeValue Int
   won        Boolean  @default(true)
   claimed    Boolean  @default(false)
-  createdAt  DateTime  @default(now())
+  createdAt  DateTime @default(now())
 }
 
 model Ticket {
-  id          String    @id @default(cuid())
-  userId      String?
-  user        User?     @relation("UserTickets", fields: [userId], references: [id])
-  orderId     String?
-  order       Order?    @relation(fields: [orderId], references: [id])
-  subject     String
-  category    String
-  status      String    @default("OPEN")
-  priority    String    @default("NORMAL")
-  message     String
-  response    String?
-  adminId     String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id        String   @id @default(cuid())
+  userId    String?
+  orderId   String?
+  subject   String
+  category  String
+  status    String   @default("OPEN")
+  priority  String   @default("NORMAL")
+  message   String
+  response  String?
+  adminId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  order     Order?   @relation(fields: [orderId], references: [id])
+  user      User?    @relation("UserTickets", fields: [userId], references: [id])
 
   @@index([userId])
   @@index([status])
 }
 
-// Idempotency keys for preventing duplicate orders and deliveries
 model IdempotencyKey {
-  id          String   @id @default(cuid())
-  key         String   @unique
+  id          String    @id @default(cuid())
+  key         String    @unique
   orderId     String
-  status      String   @default("PENDING") // PENDING | COMPLETED
-  response    Json?    // Cached response for duplicate requests
-  createdAt   DateTime @default(now())
+  status      String    @default("PENDING")
+  response    Json?
+  createdAt   DateTime  @default(now())
   completedAt DateTime?
 
   @@index([key])
@@ -741,39 +727,37 @@ model IdempotencyKey {
   @@index([createdAt])
 }
 
-// Transactional Outbox Pattern - Guarantees atomic state change + event persistence
 model OutboxEvent {
-  id          String   @id @default(cuid())
-  aggregateId String   // e.g., orderId
-  aggregateType String // e.g., "Order"
-  eventType   String   // e.g., "ORDER_PAID", "DELIVERY_COMPLETED"
-  payload     Json     // Event data
-  status      String   @default("PENDING") // PENDING | PROCESSED | FAILED
-  processedAt DateTime?
-  createdAt   DateTime @default(now())
-  metadata    Json?    // Additional context (workerId, requestId, etc.)
+  id            String    @id @default(cuid())
+  aggregateId   String
+  aggregateType String
+  eventType     String
+  payload       Json
+  status        String    @default("PENDING")
+  processedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  metadata      Json?
 
   @@index([status, createdAt])
   @@index([aggregateId, aggregateType])
   @@index([eventType])
 }
 
-// Execution Fingerprint - Prevents duplicate provider calls
 model ExecutionFingerprint {
-  id                    String   @id @default(cuid())
+  id                    String    @id @default(cuid())
   orderId               String
   orderNumber           String
-  provider              String   // GAMEDROP | G2BULK | MANUAL
+  provider              String
   attemptNumber         Int
   idempotencyKey        String
-  status                String   @default("EXECUTING") // PENDING | EXECUTING | SUCCESS | FAILED | UNKNOWN
+  status                String    @default("EXECUTING")
   providerTransactionId String?
   errorMessage          String?
-  startedAt             DateTime @default(now())
+  startedAt             DateTime  @default(now())
   completedAt           DateTime?
   metadata              Json?
 
-  @@unique([orderId, provider, idempotencyKey, status]) // Prevent duplicate executions
+  @@unique([orderId, provider, idempotencyKey, status])
   @@index([orderId])
   @@index([status, startedAt])
 }

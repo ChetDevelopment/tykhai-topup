@@ -98,16 +98,56 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // If order is PENDING, optionally verify payment with Bakong
-    // This is a non-blocking verification - we don't wait for response
+    // If order is PENDING, verify payment with Bakong BEFORE returning
+    // This ensures we detect payment immediately
     let paymentVerified = false;
     if (order.status === "PENDING" && order.metadata?.bakongMd5) {
       const md5Hash = order.metadata.bakongMd5 as string;
       
-      // Fire-and-forget verification (don't await)
-      verifyPaymentAsync(order.id, md5Hash).catch((err) => {
-        console.error("[Payment Status] Async verification error:", err);
-      });
+      // SYNCHRONOUS verification - wait for response
+      try {
+        const result = await checkBakongPayment(md5Hash);
+        
+        if (result.paid && result.status === "PAID") {
+          // Payment confirmed - update order IMMEDIATELY
+          const updatedOrder = await prisma.order.findUnique({
+            where: { id: order.id },
+            select: {
+              status: true,
+              paymentRef: true,
+              amountUsd: true,
+              amountKhr: true,
+              currency: true,
+            },
+          });
+
+          if (updatedOrder && updatedOrder.status === "PENDING") {
+            await prisma.order.update({
+              where: { id: order.id },
+              data: {
+                status: "PAID",
+                paidAt: new Date(),
+                paymentRef: updatedOrder.paymentRef || `WEBHOOK-${md5Hash.slice(0, 16)}`,
+                metadata: {
+                  ...(updatedOrder.metadata as any || {}),
+                  paymentVerifiedBy: "polling",
+                  paymentVerifiedAt: new Date().toISOString(),
+                  bakongTransactionId: result.transactionId,
+                },
+              },
+            });
+
+            paymentVerified = true;
+            console.log(`[Payment Status] Payment confirmed for order ${order.id}`);
+            
+            // Refresh order data after update
+            order.status = "PAID";
+          }
+        }
+      } catch (err) {
+        console.error("[Payment Status] Verification error:", err);
+        // Continue anyway - don't block the response
+      }
     }
 
     // Return current state
@@ -146,56 +186,6 @@ export async function GET(req: NextRequest) {
       },
       { status: 500 }
     );
-  }
-}
-
-/**
- * Async payment verification (fire-and-forget)
- * Checks Bakong API and updates order if payment confirmed
- */
-async function verifyPaymentAsync(
-  orderId: string,
-  md5Hash: string
-): Promise<void> {
-  try {
-    const result = await checkBakongPayment(md5Hash);
-    
-    if (result.paid && result.status === "PAID") {
-      // Payment confirmed - update order
-      const order = await prisma.order.findUnique({
-        where: { id: orderId },
-        select: {
-          status: true,
-          paymentRef: true,
-          amountUsd: true,
-          amountKhr: true,
-          currency: true,
-        },
-      });
-
-      if (order && order.status === "PENDING") {
-        // Mark as paid
-        await prisma.order.update({
-          where: { id: orderId },
-          data: {
-            status: "PAID",
-            paidAt: new Date(),
-            paymentRef: order.paymentRef || `WEBHOOK-${md5Hash.slice(0, 16)}`,
-            metadata: {
-              ...(order.metadata as any || {}),
-              paymentVerifiedBy: "polling",
-              paymentVerifiedAt: new Date().toISOString(),
-              bakongTransactionId: result.transactionId,
-            },
-          },
-        });
-
-        console.log(`[Payment Status] Payment confirmed for order ${orderId}`);
-      }
-    }
-  } catch (error) {
-    // Silently fail - this is async verification
-    // Webhook or background worker will handle payment confirmation
   }
 }
 

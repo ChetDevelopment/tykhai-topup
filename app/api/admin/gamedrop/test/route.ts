@@ -14,8 +14,30 @@ export async function POST(req: NextRequest) {
 
   try {
     const data = await checkGameDropBalance(settings.gameDropToken);
-    return NextResponse.json({ success: true, balance: data.balance });
+    
+    // Update balance in settings
+    try {
+      await prisma.settings.update({
+        where: { id: 1 },
+        data: {
+          currentBalance: typeof data.balance === 'number' ? data.balance : 0,
+          lastBalanceCheck: new Date(),
+          gameDropPartnerId: typeof data.partnerId === 'number' ? data.partnerId : null,
+        },
+      });
+    } catch (dbErr: any) {
+      console.error("[gamedrop-test] Database update failed:", dbErr.message);
+      // Don't fail the test if DB update fails - just log it
+    }
+    
+    return NextResponse.json({ 
+      success: true, 
+      balance: data.balance,
+      partnerId: data.partnerId,
+      isPostpaid: data.isPostpaid,
+    });
   } catch (err: any) {
+    console.error("[gamedrop-test] Error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

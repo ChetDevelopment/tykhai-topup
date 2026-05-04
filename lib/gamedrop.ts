@@ -51,10 +51,26 @@ export async function checkGameDropBalance(token: string): Promise<BalanceRespon
     });
     clearTimeout(timeout);
 
-    if (!res.ok) throw new Error(`GameDrop API error: ${res.status}`);
-    return await res.json();
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "Unknown error");
+      console.error("[gamedrop-balance] API error:", res.status, errorText);
+      throw new Error(`GameDrop API error: ${res.status} - ${errorText}`);
+    }
+    
+    const data = await res.json();
+    console.log("[gamedrop-balance] Response:", data);
+    
+    // Handle different response formats
+    if (typeof data.balance === 'undefined') {
+      console.warn("[gamedrop-balance] No balance field in response");
+    }
+    
+    return data;
   } catch (err) {
     clearTimeout(timeout);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error("GameDrop API timeout (5s)");
+    }
     throw err;
   }
 }

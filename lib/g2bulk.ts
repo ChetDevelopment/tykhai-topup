@@ -91,14 +91,25 @@ export async function checkG2BulkBalance(token: string): Promise<{ balance: numb
     });
     clearTimeout(timeout);
 
-    if (!res.ok) throw new Error(`G2Bulk API error: ${res.status}`);
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => "Unknown error");
+      console.error("[g2bulk-balance] API error:", res.status, errorText);
+      throw new Error(`G2Bulk API error: ${res.status} - ${errorText}`);
+    }
 
     const data: G2BulkUserResponse = await res.json();
-    if (!data.success) throw new Error("Failed to get user info");
+    console.log("[g2bulk-balance] Response:", data);
+    
+    if (!data.success) {
+      throw new Error("Failed to get user info from G2Bulk");
+    }
 
     return { balance: data.balance, userId: data.user_id };
   } catch (err) {
     clearTimeout(timeout);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error("G2Bulk API timeout (5s)");
+    }
     throw err;
   }
 }

@@ -22,24 +22,36 @@ export async function POST(req: NextRequest) {
     });
 
     if (!res.ok) {
-      return NextResponse.json({ success: false, error: `API error: ${res.status}` });
+      const errorText = await res.text().catch(() => "Unknown error");
+      console.error("[g2bulk-test] API error:", res.status, errorText);
+      return NextResponse.json({ 
+        success: false, 
+        error: `API error: ${res.status}`,
+        details: errorText 
+      });
     }
 
     const data = await res.json();
+    console.log("[g2bulk-test] Response:", data);
 
     if (!data.success) {
-      return NextResponse.json({ success: false, error: "Failed to connect to G2Bulk" });
+      return NextResponse.json({ success: false, error: "Failed to connect to G2Bulk", details: data });
     }
 
     // Update balance in settings
-    await prisma.settings.update({
-      where: { id: 1 },
-      data: {
-        currentBalance: data.balance,
-        lastBalanceCheck: new Date(),
-        g2bulkPartnerId: data.user_id,
-      },
-    });
+    try {
+      await prisma.settings.update({
+        where: { id: 1 },
+        data: {
+          currentBalance: typeof data.balance === 'number' ? data.balance : 0,
+          lastBalanceCheck: new Date(),
+          g2bulkPartnerId: typeof data.user_id === 'number' ? data.user_id : null,
+        },
+      });
+    } catch (dbErr: any) {
+      console.error("[g2bulk-test] Database update failed:", dbErr.message);
+      // Don't fail the test if DB update fails - just log it
+    }
 
     return NextResponse.json({
       success: true,
@@ -48,6 +60,7 @@ export async function POST(req: NextRequest) {
       username: data.username,
     });
   } catch (err: any) {
+    console.error("[g2bulk-test] Error:", err);
     return NextResponse.json({ success: false, error: err.message });
   }
 }
