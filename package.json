@@ -16,6 +16,9 @@
     "test:quick": "tsx scripts/quick-payment-test.ts",
     "test:providers": "tsx scripts/test-provider-connections.ts",
     "test:providers:quick": "powershell -ExecutionPolicy Bypass -File scripts/test-provider-apis.ps1",
+    "verify:payment": "tsx scripts/verify-auto-payment.ts",
+    "check:pending": "tsx scripts/check-and-fix-pending.ts",
+    "diagnose:payment": "tsx scripts/diagnose-payment.ts",
     "worker": "tsx scripts/run-workers.ts",
     "worker:dev": "cross-env NODE_ENV=development tsx scripts/run-workers.ts",
     "validate:payment": "tsx scripts/validate-payment-flow.ts"
