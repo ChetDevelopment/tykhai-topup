@@ -1,9 +1,13 @@
 import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkBakongPayment, processDeliveryQueue } from "@/lib/payment";
 import { getOrderState, markOrderAsPaid } from "@/lib/payment-state-machine";
+
+// DEBUG: Route loaded
+console.log("[Payment Status Route] Module loaded at", new Date().toISOString());
 
 /**
  * GET /api/payment/status?orderNumber=XXX
