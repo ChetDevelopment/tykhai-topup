@@ -80,13 +80,13 @@ PUBLIC_APP_URL=https://tykhai.vercel.app
   "crons": [
     {
       "path": "/api/cron/reconcile-payments",
-      "schedule": "*/1 * * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }
 ```
 
-**Impact:** Payment reconciliation runs every minute as a safety net for missed webhooks.
+**Impact:** Payment reconciliation runs every hour as a safety net for missed webhooks.
 
 ---
 
@@ -124,11 +124,11 @@ CRON_SECRET=tykhai_cron_secret_2026_change_in_production
    └─ Checks Bakong API directly
    └─ Updates order if paid
 
-5. Background worker runs every 5s
+5. Background worker runs every 5s (during server runtime)
    └─ Checks all PENDING orders
    └─ Reconciles missed payments
 
-6. Vercel Cron runs every minute → POST /api/cron/reconcile-payments
+6. Vercel Cron runs every hour → POST /api/cron/reconcile-payments
    └─ FINAL SAFETY NET
    └─ Checks pending payments via Bakong API
    └─ Updates any missed payments
