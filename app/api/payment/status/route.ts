@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
-import { checkBakongPayment } from "@/lib/payment";
+import { checkBakongPayment, processDeliveryQueue } from "@/lib/payment";
 import { getOrderState, markOrderAsPaid } from "@/lib/payment-state-machine";
 
 /**
@@ -124,26 +124,28 @@ export async function GET(req: NextRequest) {
           });
 
           if (updatedOrder && updatedOrder.status === "PENDING") {
-            await prisma.order.update({
-              where: { id: order.id },
-              data: {
-                status: "PAID",
-                paidAt: new Date(),
-                paymentRef: updatedOrder.paymentRef || `WEBHOOK-${md5Hash.slice(0, 16)}`,
-                metadata: {
-                  ...(updatedOrder.metadata as any || {}),
-                  paymentVerifiedBy: "polling",
-                  paymentVerifiedAt: new Date().toISOString(),
-                  bakongTransactionId: result.transactionId,
-                },
-              },
+            const markResult = await markOrderAsPaid(order.id, {
+              paymentRef: updatedOrder.paymentRef || `WEBHOOK-${md5Hash.slice(0, 16)}`,
+              amount: order.currency === "KHR" ? (order.amountKhr || 0) : order.amountUsd,
+              currency: order.currency,
+              transactionId: result.transactionId,
+              verifiedBy: "polling",
             });
 
-            paymentVerified = true;
-            console.log(`[Payment Status] Payment confirmed for order ${order.id}`);
-            
-            // Refresh order data after update
-            order.status = "PAID";
+            if (markResult.success) {
+              paymentVerified = true;
+              console.log(`[Payment Status] Payment confirmed for order ${order.orderNumber}`);
+              
+              // Trigger delivery processing (fire-and-forget)
+              processDeliveryQueue(5).then((deliveryResult) => {
+                console.log("[Payment Status] Delivery processing:", deliveryResult);
+              }).catch((err) => {
+                console.error("[Payment Status] Delivery error:", err);
+              });
+              
+              // Refresh order data after update
+              order.status = "PAID";
+            }
           }
         }
       } catch (err) {

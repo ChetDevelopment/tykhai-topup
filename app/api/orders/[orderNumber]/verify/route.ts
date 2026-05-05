@@ -1,8 +1,7 @@
 import { prisma } from "@/lib/prisma";
-export const dynamic = "force-dynamic";
-
 import { NextRequest, NextResponse } from "next/server";
-import { checkBakongPayment } from "@/lib/payment";
+import { checkBakongPayment, processDeliveryQueue } from "@/lib/payment";
+import { markOrderAsPaid } from "@/lib/payment-state-machine";
 import crypto from "crypto";
 
 /**
@@ -77,34 +76,35 @@ export async function POST(
         if (bakongResult.paid && bakongResult.status === "PAID") {
           console.log(`[Verify] Payment confirmed! Updating order ${order.orderNumber} to PAID`);
           
-          // Update order to PAID
-          await prisma.order.update({
-            where: { id: order.id },
-            data: {
+          const markResult = await markOrderAsPaid(order.id, {
+            paymentRef: order.paymentRef || `WEBHOOK-${md5Hash.slice(0, 16)}`,
+            amount: order.currency === "KHR" ? (order.amountKhr || 0) : order.amountUsd,
+            currency: order.currency,
+            transactionId: bakongResult.transactionId,
+            verifiedBy: "verify_endpoint",
+          });
+          
+          if (markResult.success) {
+            console.log(`[Verify] Order ${order.orderNumber} updated to PAID`);
+            
+            // Trigger delivery processing (fire-and-forget)
+            processDeliveryQueue(5).then((result) => {
+              console.log("[Verify] Delivery processing:", result);
+            }).catch((err) => {
+              console.error("[Verify] Delivery error:", err);
+            });
+            
+            return NextResponse.json({
+              orderNumber: order.orderNumber,
               status: "PAID",
-              paidAt: bakongResult.paidAt || new Date(),
-              metadata: {
-                ...order.metadata,
-                paymentVerifiedBy: "verify_endpoint",
-                paymentVerifiedAt: new Date().toISOString(),
-                bakongTransactionId: bakongResult.transactionId,
-              },
-            },
-          });
-          
-          console.log(`[Verify] Order ${order.orderNumber} updated to PAID`);
-          
-          return NextResponse.json({
-            orderNumber: order.orderNumber,
-            status: "PAID",
-            deliveryStatus: order.deliveryStatus,
-            isPaid: true,
-            paidAt: bakongResult.paidAt?.toISOString() || new Date().toISOString(),
-            deliveredAt: order.deliveredAt?.toISOString(),
-            message: "Payment received! Preparing your top-up...",
-            justPaid: true,
-          });
-        }
+              deliveryStatus: order.deliveryStatus,
+              isPaid: true,
+              paidAt: bakongResult.paidAt?.toISOString() || new Date().toISOString(),
+              deliveredAt: order.deliveredAt?.toISOString(),
+              message: "Payment received! Preparing your top-up...",
+              justPaid: true,
+            });
+          }
       } catch (err: any) {
         console.error(`[Verify] Bakong check error:`, err.message);
         // Continue - don't fail the request

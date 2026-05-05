@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import {
   checkBakongPayment,
   validatePaymentAmount,
+  processDeliveryQueue,
 } from "@/lib/payment";
 import { notifyTelegram, escapeHtml } from "@/lib/telegram";
 import { NextRequest, NextResponse } from "next/server";
@@ -11,7 +12,6 @@ import { sanitizeInput, isSuspiciousRequest, logSecurityEvent } from "@/lib/secu
 import { hashSha256, verifyWebhookSignature } from "@/lib/encryption";
 import { z } from "zod";
 import { markOrderAsPaid } from "@/lib/payment-state-machine";
-import { startPaymentWorker } from "@/lib/payment-worker";
 
 // Webhook replay protection
 const recentWebhookCache = new Set<string>();
@@ -173,9 +173,13 @@ export async function POST(req: NextRequest) {
     // Notify Telegram
     notifyTelegramPayment(order).catch(() => {});
 
-    // Trigger worker to process delivery (if not already running)
-    // This is fire-and-forget - worker runs continuously anyway
-    startPaymentWorker().catch(() => {});
+    // Process delivery immediately (Vercel serverless - no background workers)
+    console.log("[webhook] Triggering delivery processing...");
+    processDeliveryQueue(5).then((result) => {
+      console.log("[webhook] Delivery processing completed:", result);
+    }).catch((err) => {
+      console.error("[webhook] Delivery processing error:", err);
+    });
 
     return NextResponse.json({
       status: "PAID",
