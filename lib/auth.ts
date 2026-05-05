@@ -71,20 +71,38 @@ export const authOptions: NextAuthOptions = {
       // OAuth sign in
       if (account?.provider === "google") {
         // Make sure the user exists in our database
-        const existingUser = await prisma.user.findUnique({
+        let existingUser = await prisma.user.findUnique({
           where: { email: user.email! },
         });
         
         if (!existingUser) {
           // Create user if doesn't exist (should be handled by adapter, but just in case)
-          await prisma.user.create({
+          existingUser = await prisma.user.create({
             data: {
               email: user.email!,
               name: user.name || "",
               role: "USER",
             },
           });
+          console.log("[NextAuth] Created new user:", existingUser.id, existingUser.email);
+        } else {
+          console.log("[NextAuth] Found existing user:", existingUser.id, existingUser.email);
         }
+        
+        // IMPORTANT: Set our custom cookie so the rest of the app recognizes the user
+        // This bridges NextAuth with our custom auth system
+        const userSession = await createUserSession({
+          userId: existingUser.id,
+          email: existingUser.email,
+          name: existingUser.name || undefined,
+          role: existingUser.role,
+          vipRank: existingUser.vipRank,
+          pointsBalance: existingUser.pointsBalance,
+          walletBalance: existingUser.walletBalance,
+        });
+        
+        // Note: We can't set cookies directly in signIn callback
+        // The cookie will be set by the session callback below
       }
       return true;
     },
@@ -105,6 +123,12 @@ export const authOptions: NextAuthOptions = {
         userId: message.user.id,
         provider: message.account.provider,
         providerAccountId: message.account.providerAccountId,
+      });
+    },
+    async session(message) {
+      console.log("[NextAuth] Session:", {
+        userId: (message.session.user as any)?.id,
+        email: message.session.user?.email,
       });
     },
   },
@@ -230,7 +254,7 @@ export async function getCurrentUser(): Promise<UserSession | null> {
   let userId: string | null = null;
   let email: string | null = null;
 
-  // 1. Try Manual JWT Cookie
+  // 1. Try Manual JWT Cookie (tykhai_user)
   const cookieStore = await cookies();
   const manualToken = cookieStore.get(USER_COOKIE)?.value;
   if (manualToken) {
@@ -238,16 +262,72 @@ export async function getCurrentUser(): Promise<UserSession | null> {
     if (session) {
       userId = session.userId;
       email = session.email;
+      console.log("[getCurrentUser] Found manual JWT session for:", email);
     }
   }
 
-  // 2. Try NextAuth Session (Social/Google login)
+  // 2. Try NextAuth Session (Google login)
   if (!email) {
-    const nextAuthSession = await getServerSession(authOptions);
-    if (nextAuthSession?.user?.email) {
-      email = nextAuthSession.user.email;
-      // NextAuth JWT session contains the user ID
-      userId = (nextAuthSession.user as any).id || null;
+    try {
+      const nextAuthSession = await getServerSession(authOptions);
+      if (nextAuthSession?.user?.email) {
+        email = nextAuthSession.user.email;
+        userId = (nextAuthSession.user as any).id || null;
+        console.log("[getCurrentUser] Found NextAuth session for:", email, "userId:", userId);
+        
+        // If we have a NextAuth session but no manual cookie, create one
+        // This bridges NextAuth with our custom auth system
+        if (!manualToken && userId) {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              role: true,
+              vipRank: true,
+              pointsBalance: true,
+              walletBalance: true,
+            },
+          });
+          
+          if (dbUser) {
+            console.log("[getCurrentUser] Creating manual session for NextAuth user");
+            // Create and set our custom cookie
+            const sessionToken = await createUserSession({
+              userId: dbUser.id,
+              email: dbUser.email,
+              name: dbUser.name ?? undefined,
+              role: dbUser.role,
+              vipRank: dbUser.vipRank,
+              pointsBalance: dbUser.pointsBalance,
+              walletBalance: dbUser.walletBalance,
+            });
+            
+            // Set the cookie
+            cookieStore.set(USER_COOKIE, sessionToken, {
+              httpOnly: true,
+              secure: process.env.NODE_ENV === "production",
+              sameSite: "lax",
+              maxAge: SESSION_TTL,
+              path: "/",
+            });
+            
+            // Return the session immediately
+            return {
+              userId: dbUser.id,
+              email: dbUser.email,
+              name: dbUser.name ?? undefined,
+              role: dbUser.role,
+              vipRank: dbUser.vipRank,
+              pointsBalance: dbUser.pointsBalance,
+              walletBalance: dbUser.walletBalance,
+            };
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[getCurrentUser] NextAuth session error:", error);
     }
   }
 
@@ -276,7 +356,12 @@ export async function getCurrentUser(): Promise<UserSession | null> {
     }
   });
 
-  if (!user) return null;
+  if (!user) {
+    console.log("[getCurrentUser] No user found in database for email:", email);
+    return null;
+  }
+
+  console.log("[getCurrentUser] Found user in database:", user.id, user.email);
 
   return {
     userId: user.id,
