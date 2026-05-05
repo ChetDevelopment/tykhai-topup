@@ -58,7 +58,7 @@ export async function POST(
 
   // 3. Order is PENDING - check Bakong API for payment
   if (order.status === "PENDING") {
-    let md5Hash = order.metadata?.bakongMd5;
+    let md5Hash = (order.metadata as any)?.bakongMd5;
     
     // Calculate MD5 from QR if not in metadata
     if (!md5Hash && order.qrString) {
@@ -73,7 +73,7 @@ export async function POST(
         
         console.log(`[Verify] Bakong result:`, { paid: bakongResult.paid, status: bakongResult.status });
         
-        if (bakongResult.paid && bakongResult.status === "PAID") {
+        if (bakongResult.paid && (bakongResult.status as any) === "PAID") {
           console.log(`[Verify] Payment confirmed! Updating order ${order.orderNumber} to PAID`);
           
           const markResult = await markOrderAsPaid(order.id, {
@@ -81,7 +81,7 @@ export async function POST(
             amount: order.currency === "KHR" ? (order.amountKhr || 0) : order.amountUsd,
             currency: order.currency,
             transactionId: bakongResult.transactionId,
-            verifiedBy: "verify_endpoint",
+            verifiedBy: "api",
           });
           
           if (markResult.success) {
@@ -105,6 +105,7 @@ export async function POST(
               justPaid: true,
             });
           }
+        }
       } catch (err: any) {
         console.error(`[Verify] Bakong check error:`, err.message);
         // Continue - don't fail the request

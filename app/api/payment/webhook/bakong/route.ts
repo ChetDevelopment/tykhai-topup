@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
     // Verify payment with Bakong API
     const bakongResult = await checkBakongPayment(md5Hash);
     
-    if (!bakongResult.paid || bakongResult.status !== "PAID") {
+    if (!bakongResult.paid || (bakongResult.status as any) !== "PAID") {
       console.log("[webhook] Payment not confirmed:", bakongResult);
       return NextResponse.json({
         status: "PENDING",

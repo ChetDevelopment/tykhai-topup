@@ -103,14 +103,14 @@ export async function GET(req: NextRequest) {
     // If order is PENDING, verify payment with Bakong BEFORE returning
     // This ensures we detect payment immediately
     let paymentVerified = false;
-    if (order.status === "PENDING" && order.metadata?.bakongMd5) {
-      const md5Hash = order.metadata.bakongMd5 as string;
+    if (order.status === "PENDING" && (order.metadata as any)?.bakongMd5) {
+      const md5Hash = (order.metadata as any).bakongMd5 as string;
       
       // SYNCHRONOUS verification - wait for response
       try {
         const result = await checkBakongPayment(md5Hash);
         
-        if (result.paid && result.status === "PAID") {
+        if (result.paid && (result.status as any) === "PAID") {
           // Payment confirmed - update order IMMEDIATELY
           const updatedOrder = await prisma.order.findUnique({
             where: { id: order.id },
