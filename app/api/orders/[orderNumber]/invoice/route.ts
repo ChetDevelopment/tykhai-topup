@@ -42,11 +42,17 @@ function renderPdf(order: {
   product: { name: string; amount: number; bonus: number; priceUsd: number };
 }): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 0 });
-    const chunks: Buffer[] = [];
-    doc.on("data", (c: Buffer) => chunks.push(c));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
+    try {
+      // Validate required data
+      if (!order.game?.name || !order.product?.name) {
+        throw new Error("Missing game or product data");
+      }
+
+      const doc = new PDFDocument({ size: "A4", margin: 0 });
+      const chunks: Buffer[] = [];
+      doc.on("data", (c: Buffer) => chunks.push(c));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
 
     const pageW = doc.page.width; // 595
     const pageH = doc.page.height; // 842
@@ -336,6 +342,10 @@ function renderPdf(order: {
       );
 
     doc.end();
+    } catch (error) {
+      console.error("[invoice] renderPdf error:", error);
+      reject(error);
+    }
   });
 }
 
@@ -356,34 +366,54 @@ export async function GET(
   });
 
   if (!order) {
+    console.error(`[invoice] Order not found: ${orderNumber}`);
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
-  if (!order.userId) {
+  
+  // Allow invoice access for authenticated user or if no userId is set (legacy orders)
+  if (order.userId && order.userId !== security.user.userId) {
+    console.error(`[invoice] Forbidden: user ${security.user.userId} != order ${order.userId}`);
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (order.userId !== security.user.userId) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  
   if (!INVOICEABLE_STATUSES.has(order.status)) {
+    console.error(`[invoice] Invalid status: ${order.status}`);
     return NextResponse.json(
       { error: "Invoice is only available after payment is confirmed." },
       { status: 409 }
     );
   }
 
-  const pdf = await renderPdf({
-    ...order,
-    customerEmail: decryptField(order.customerEmail) ?? order.customerEmail,
-    customerPhone: decryptField(order.customerPhone) ?? order.customerPhone,
-  });
+  // Validate required data
+  if (!order.game || !order.product) {
+    console.error(`[invoice] Missing game or product data for order: ${orderNumber}`);
+    return NextResponse.json({ error: "Order data incomplete" }, { status: 400 });
+  }
 
-  return new NextResponse(new Uint8Array(pdf), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="invoice-${order.orderNumber}.pdf"`,
-      "Content-Length": String(pdf.length),
-      "Cache-Control": "no-store",
-    },
-  });
+  try {
+    console.log(`[invoice] Generating PDF for order: ${orderNumber}`);
+    const pdf = await renderPdf({
+      ...order,
+      customerEmail: decryptField(order.customerEmail) ?? order.customerEmail,
+      customerPhone: decryptField(order.customerPhone) ?? order.customerPhone,
+    });
+
+    console.log(`[invoice] PDF generated successfully: ${pdf.length} bytes`);
+
+    return new NextResponse(new Uint8Array(pdf), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="invoice-${order.orderNumber}.pdf"`,
+        "Content-Length": String(pdf.length),
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (error) {
+    console.error(`[invoice] Error generating PDF:`, error);
+    return NextResponse.json(
+      { error: "Failed to generate invoice", details: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
+    );
+  }
 }
