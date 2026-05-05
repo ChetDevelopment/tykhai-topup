@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import PDFDocument from "pdfkit";
 import { decryptField } from "@/lib/encryption";
-import { guardUserApi, ordersApiRateLimit } from "@/lib/api-security";
+import { ordersApiRateLimit } from "@/lib/api-security";
 
 // pdfkit needs the Node runtime (fs, Buffer); it will not work on edge.
 export const runtime = "nodejs";
@@ -353,8 +353,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ orderNumber: string }> }
 ) {
-  const security = await guardUserApi(req, ordersApiRateLimit);
-  if ("response" in security) return security.response;
+  // Apply rate limiting
+  const rateLimitResponse = await ordersApiRateLimit(req);
+  if (rateLimitResponse) return rateLimitResponse;
 
   const { orderNumber } = await params;
   const order = await prisma.order.findUnique({
@@ -370,11 +371,8 @@ export async function GET(
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
   
-  // Allow invoice access for authenticated user or if no userId is set (legacy orders)
-  if (order.userId && order.userId !== security.user.userId) {
-    console.error(`[invoice] Forbidden: user ${security.user.userId} != order ${order.userId}`);
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  // No authentication required - having the order number is sufficient
+  // This allows customers to download invoices without logging in
   
   if (!INVOICEABLE_STATUSES.has(order.status)) {
     console.error(`[invoice] Invalid status: ${order.status}`);
