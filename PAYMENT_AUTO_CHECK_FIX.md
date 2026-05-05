@@ -67,26 +67,18 @@ PUBLIC_APP_URL=https://tykhai.vercel.app
 
 ---
 
-### 4. Added Payment Reconciliation Cron
+### 4. Added Payment Reconciliation Endpoint
 
 **Files Created/Updated:**
-- `vercel.json` - Added cron schedule
 - `app/api/cron/reconcile-payments/route.ts` - New endpoint
 - `lib/payment-worker.ts` - Exported `checkPendingPayments()`
 
-**Added to `vercel.json`:**
-```json
-{
-  "crons": [
-    {
-      "path": "/api/cron/reconcile-payments",
-      "schedule": "0 * * * *"
-    }
-  ]
-}
-```
+**Note:** Vercel Hobby plan limits cron jobs to once per day. The reconciliation endpoint is available but runs via:
+- Background worker (every 5 seconds during server runtime)
+- Manual trigger via API
+- Can be scheduled externally (e.g., GitHub Actions, external cron service)
 
-**Impact:** Payment reconciliation runs every hour as a safety net for missed webhooks.
+**Impact:** Payment reconciliation is available as safety net for missed webhooks.
 
 ---
 
@@ -128,10 +120,9 @@ CRON_SECRET=tykhai_cron_secret_2026_change_in_production
    └─ Checks all PENDING orders
    └─ Reconciles missed payments
 
-6. Vercel Cron runs every hour → POST /api/cron/reconcile-payments
-   └─ FINAL SAFETY NET
-   └─ Checks pending payments via Bakong API
-   └─ Updates any missed payments
+6. Reconciliation endpoint available at `/api/cron/reconcile-payments`
+   └─ Can be triggered manually or by external scheduler
+   └─ FINAL SAFETY NET for missed webhooks
 ```
 
 ---

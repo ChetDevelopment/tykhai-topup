@@ -11,10 +11,6 @@
     {
       "path": "/api/cron/process-deliveries",
       "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/reconcile-payments",
-      "schedule": "0 * * * *"
     }
   ]
 }
