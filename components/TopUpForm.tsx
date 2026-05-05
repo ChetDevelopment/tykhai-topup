@@ -615,8 +615,18 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
               }`}
             >
               <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/30 text-green-500 transition-transform group-hover:scale-110">
-                  <ShieldCheck className="h-6 w-6" strokeWidth={2} />
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white border border-green-500/30 overflow-hidden transition-transform group-hover:scale-110">
+                  <img 
+                    src="/aba-logo.png" 
+                    alt="ABA" 
+                    className="h-8 w-8 object-contain"
+                    onError={(e) => {
+                      // Fallback to text if image not found
+                      (e.target as HTMLImageElement).style.display = 'none';
+                      (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                    }}
+                  />
+                  <span className="hidden font-bold text-green-600 text-sm">ABA</span>
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
