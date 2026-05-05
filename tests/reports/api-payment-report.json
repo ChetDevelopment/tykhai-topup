@@ -1,0 +1,151 @@
+{
+  "suites": [
+    {
+      "name": "API Tests - Payment",
+      "results": [
+        {
+          "name": "SETUP - Fetch games and products",
+          "status": "FAIL",
+          "duration": 43,
+          "error": "Expected status 200, got 403",
+          "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:58:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:56:3)",
+          "timestamp": "2026-05-05T03:50:19.343Z"
+        },
+        {
+          "name": "QR generation - must never return null or empty",
+          "status": "FAIL",
+          "duration": 7,
+          "error": "Expected status 200, got 403",
+          "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:78:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:70:3)",
+          "timestamp": "2026-05-05T03:50:19.350Z"
+        },
+        {
+          "name": "QR generation - must contain valid KHQR structure",
+          "status": "FAIL",
+          "duration": 6,
+          "error": "Cannot read properties of undefined (reading 'includes')",
+          "stack": "TypeError: Cannot read properties of undefined (reading 'includes')\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:96:15)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:84:3)",
+          "timestamp": "2026-05-05T03:50:19.356Z"
+        },
+        {
+          "name": "QR generation - must include payment reference",
+          "status": "FAIL",
+          "duration": 6,
+          "error": "Expected object to have field \"paymentRef\"",
+          "stack": "Error: Expected object to have field \"paymentRef\"\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertHasField (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:49:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:108:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:101:3)",
+          "timestamp": "2026-05-05T03:50:19.362Z"
+        },
+        {
+          "name": "QR generation - must include expiration time",
+          "status": "FAIL",
+          "duration": 10,
+          "error": "Expected object to have field \"expiresAt\"",
+          "stack": "Error: Expected object to have field \"expiresAt\"\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertHasField (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:49:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:119:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:112:3)",
+          "timestamp": "2026-05-05T03:50:19.373Z"
+        },
+        {
+          "name": "Payment simulation - should mark order as paid",
+          "status": "FAIL",
+          "duration": 6,
+          "error": "Expected status 200, got 403",
+          "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:135:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:128:3)",
+          "timestamp": "2026-05-05T03:50:19.379Z"
+        },
+        {
+          "name": "Payment simulation - should not allow duplicate payment",
+          "status": "FAIL",
+          "duration": 15,
+          "error": "Duplicate payment should be handled",
+          "stack": "Error: Duplicate payment should be handled\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:166:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:148:3)",
+          "timestamp": "2026-05-05T03:50:19.394Z"
+        },
+        {
+          "name": "Payment verification - should check payment status",
+          "status": "PASS",
+          "duration": 8,
+          "timestamp": "2026-05-05T03:50:19.402Z"
+        },
+        {
+          "name": "State transition - PENDING → PAID → PROCESSING → DELIVERED",
+          "status": "FAIL",
+          "duration": 11,
+          "error": "Initial status should be PENDING",
+          "stack": "Error: Initial status should be PENDING\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:199:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:190:3)",
+          "timestamp": "2026-05-05T03:50:19.413Z"
+        },
+        {
+          "name": "State transition - expired order handling",
+          "status": "FAIL",
+          "duration": 4,
+          "error": "Expected object to have field \"expiresAt\"",
+          "stack": "Error: Expected object to have field \"expiresAt\"\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertHasField (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:49:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:221:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:212:3)",
+          "timestamp": "2026-05-05T03:50:19.417Z"
+        },
+        {
+          "name": "Failure handling - should handle payment timeout gracefully",
+          "status": "FAIL",
+          "duration": 6,
+          "error": "Expected status 200, got 403",
+          "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:235:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:228:3)",
+          "timestamp": "2026-05-05T03:50:19.423Z"
+        },
+        {
+          "name": "Failure handling - should handle invalid payment hash",
+          "status": "FAIL",
+          "duration": 22,
+          "error": "Expected status 200, got 403",
+          "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:245:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:242:3)",
+          "timestamp": "2026-05-05T03:50:19.446Z"
+        },
+        {
+          "name": "Currency - USD payment should have correct amount",
+          "status": "FAIL",
+          "duration": 11,
+          "error": "Expected status 200, got 403",
+          "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:259:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:251:3)",
+          "timestamp": "2026-05-05T03:50:19.457Z"
+        },
+        {
+          "name": "Currency - KHR payment should have correct conversion",
+          "status": "FAIL",
+          "duration": 10,
+          "error": "Expected status 200, got 403",
+          "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:272:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:264:3)",
+          "timestamp": "2026-05-05T03:50:19.467Z"
+        },
+        {
+          "name": "Performance - QR generation under 500ms",
+          "status": "FAIL",
+          "duration": 9,
+          "error": "Expected status 200, got 403",
+          "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:291:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\payment.test.ts:281:3)",
+          "timestamp": "2026-05-05T03:50:19.477Z"
+        }
+      ],
+      "totalTests": 15,
+      "passed": 1,
+      "failed": 14,
+      "skipped": 0,
+      "duration": 179,
+      "timestamp": "2026-05-05T03:50:19.477Z"
+    }
+  ],
+  "totalTests": 15,
+  "passed": 1,
+  "failed": 14,
+  "skipped": 0,
+  "duration": 179,
+  "timestamp": "2026-05-05T03:50:19.298Z",
+  "environment": {
+    "nodeVersion": "v24.13.1",
+    "platform": "win32",
+    "baseUrl": "http://localhost:3000"
+  },
+  "errors": {
+    "total": 14,
+    "byType": {
+      "Unknown": 14
+    },
+    "critical": []
+  }
+}

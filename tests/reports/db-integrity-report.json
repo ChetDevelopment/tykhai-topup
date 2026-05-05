@@ -1,0 +1,123 @@
+{
+  "suites": [
+    {
+      "name": "Database Integrity Tests",
+      "results": [
+        {
+          "name": "SETUP - Initialize test data",
+          "status": "PASS",
+          "duration": 1588,
+          "timestamp": "2026-05-05T02:29:37.464Z"
+        },
+        {
+          "name": "DB Integrity - No duplicate order numbers",
+          "status": "PASS",
+          "duration": 14956,
+          "timestamp": "2026-05-05T02:29:52.420Z"
+        },
+        {
+          "name": "DB Integrity - No duplicate payment references",
+          "status": "PASS",
+          "duration": 14400,
+          "timestamp": "2026-05-05T02:30:06.820Z"
+        },
+        {
+          "name": "DB Integrity - No orphan payment logs",
+          "status": "PASS",
+          "duration": 3953,
+          "timestamp": "2026-05-05T02:30:10.773Z"
+        },
+        {
+          "name": "DB Integrity - Revenue calculation accuracy",
+          "status": "PASS",
+          "duration": 8696,
+          "timestamp": "2026-05-05T02:30:19.469Z"
+        },
+        {
+          "name": "DB Integrity - Order state consistency",
+          "status": "PASS",
+          "duration": 3672,
+          "timestamp": "2026-05-05T02:30:23.141Z"
+        },
+        {
+          "name": "DB Integrity - PaidAt timestamp set on payment",
+          "status": "FAIL",
+          "duration": 5675,
+          "error": "paidAt should be set after payment",
+          "stack": "Error: paidAt should be set after payment\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:41:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:190:7)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:168:3)",
+          "timestamp": "2026-05-05T02:30:28.821Z"
+        },
+        {
+          "name": "DB Integrity - Idempotency key prevents duplicates",
+          "status": "PASS",
+          "duration": 6802,
+          "timestamp": "2026-05-05T02:30:35.623Z"
+        },
+        {
+          "name": "DB Integrity - Email encryption",
+          "status": "FAIL",
+          "duration": 3429,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:236:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:224:3)",
+          "timestamp": "2026-05-05T02:30:39.054Z"
+        },
+        {
+          "name": "DB Integrity - UID sanitization",
+          "status": "FAIL",
+          "duration": 49,
+          "error": "Expected status 200, got 400",
+          "stack": "Error: Expected status 200, got 400\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:255:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:246:3)",
+          "timestamp": "2026-05-05T02:30:39.104Z"
+        },
+        {
+          "name": "DB Integrity - Game reference valid",
+          "status": "FAIL",
+          "duration": 3824,
+          "error": "Game ID should match",
+          "stack": "Error: Game ID should match\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:41:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:280:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:267:3)",
+          "timestamp": "2026-05-05T02:30:42.928Z"
+        },
+        {
+          "name": "DB Integrity - Product reference valid",
+          "status": "FAIL",
+          "duration": 4462,
+          "error": "Product ID should match",
+          "stack": "Error: Product ID should match\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:41:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:296:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:283:3)",
+          "timestamp": "2026-05-05T02:30:47.392Z"
+        },
+        {
+          "name": "DB Integrity - Audit logs created for admin actions",
+          "status": "FAIL",
+          "duration": 505,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:302:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\integration\\db-integrity.test.ts:301:3)",
+          "timestamp": "2026-05-05T02:30:47.897Z"
+        }
+      ],
+      "totalTests": 13,
+      "passed": 7,
+      "failed": 6,
+      "skipped": 0,
+      "duration": 72021,
+      "timestamp": "2026-05-05T02:30:47.897Z"
+    }
+  ],
+  "totalTests": 13,
+  "passed": 7,
+  "failed": 6,
+  "skipped": 0,
+  "duration": 72021,
+  "timestamp": "2026-05-05T02:29:35.876Z",
+  "environment": {
+    "nodeVersion": "v24.13.1",
+    "platform": "win32",
+    "baseUrl": "http://localhost:3000"
+  },
+  "errors": {
+    "total": 6,
+    "byType": {
+      "Unknown": 6
+    },
+    "critical": []
+  }
+}

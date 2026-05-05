@@ -1,0 +1,149 @@
+{
+  "suites": [
+    {
+      "name": "API Tests - Admin",
+      "results": [
+        {
+          "name": "Admin login - should authenticate with valid credentials",
+          "status": "FAIL",
+          "duration": 52,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:59:22)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:58:3)",
+          "timestamp": "2026-05-05T02:28:41.244Z"
+        },
+        {
+          "name": "Admin login - should reject invalid credentials",
+          "status": "PASS",
+          "duration": 8,
+          "timestamp": "2026-05-05T02:28:41.252Z"
+        },
+        {
+          "name": "Dashboard - should fetch revenue stats",
+          "status": "FAIL",
+          "duration": 6,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:79:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:78:3)",
+          "timestamp": "2026-05-05T02:28:41.259Z"
+        },
+        {
+          "name": "Orders - should list all orders",
+          "status": "FAIL",
+          "duration": 6,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:94:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:93:3)",
+          "timestamp": "2026-05-05T02:28:41.265Z"
+        },
+        {
+          "name": "Orders - should filter by status",
+          "status": "FAIL",
+          "duration": 7,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:105:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:104:3)",
+          "timestamp": "2026-05-05T02:28:41.272Z"
+        },
+        {
+          "name": "Orders - should search by order number",
+          "status": "FAIL",
+          "duration": 5,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:119:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:118:3)",
+          "timestamp": "2026-05-05T02:28:41.278Z"
+        },
+        {
+          "name": "Orders - should paginate results",
+          "status": "FAIL",
+          "duration": 5,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:149:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:148:3)",
+          "timestamp": "2026-05-05T02:28:41.283Z"
+        },
+        {
+          "name": "Refund - should process refund for order",
+          "status": "FAIL",
+          "duration": 6,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:161:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:160:3)",
+          "timestamp": "2026-05-05T02:28:41.289Z"
+        },
+        {
+          "name": "Audit logs - should retrieve audit logs",
+          "status": "FAIL",
+          "duration": 7,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:173:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:172:3)",
+          "timestamp": "2026-05-05T02:28:41.297Z"
+        },
+        {
+          "name": "Audit logs - should log admin actions",
+          "status": "FAIL",
+          "duration": 5,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:183:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:182:3)",
+          "timestamp": "2026-05-05T02:28:41.302Z"
+        },
+        {
+          "name": "Permissions - should reject admin access without token",
+          "status": "PASS",
+          "duration": 3,
+          "timestamp": "2026-05-05T02:28:41.305Z"
+        },
+        {
+          "name": "Games - admin should view all games",
+          "status": "FAIL",
+          "duration": 4,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:211:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:210:3)",
+          "timestamp": "2026-05-05T02:28:41.309Z"
+        },
+        {
+          "name": "Products - admin should view products by game",
+          "status": "FAIL",
+          "duration": 4,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:219:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:218:3)",
+          "timestamp": "2026-05-05T02:28:41.313Z"
+        },
+        {
+          "name": "Fraud - should track fraud flags",
+          "status": "FAIL",
+          "duration": 5,
+          "error": "Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON",
+          "stack": "Error: Request failed: Unexpected token 'F', \"Forbidden\" is not valid JSON\n    at TestClient.request (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:115:13)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async TestClient.adminLogin (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\utils\\test-client.ts:120:22)\n    at async <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:232:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:231:3)",
+          "timestamp": "2026-05-05T02:28:41.318Z"
+        },
+        {
+          "name": "System - should handle maintenance mode check",
+          "status": "FAIL",
+          "duration": 831,
+          "error": "Should handle maintenance mode",
+          "stack": "Error: Should handle maintenance mode\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:42:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:250:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:22:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\admin.test.ts:241:3)",
+          "timestamp": "2026-05-05T02:28:42.150Z"
+        }
+      ],
+      "totalTests": 15,
+      "passed": 2,
+      "failed": 13,
+      "skipped": 0,
+      "duration": 960,
+      "timestamp": "2026-05-05T02:28:42.150Z"
+    }
+  ],
+  "totalTests": 15,
+  "passed": 2,
+  "failed": 13,
+  "skipped": 0,
+  "duration": 960,
+  "timestamp": "2026-05-05T02:28:41.190Z",
+  "environment": {
+    "nodeVersion": "v24.13.1",
+    "platform": "win32",
+    "baseUrl": "http://localhost:3000"
+  },
+  "errors": {
+    "total": 13,
+    "byType": {
+      "Unknown": 13
+    },
+    "critical": []
+  }
+}

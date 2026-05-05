@@ -1,0 +1,240 @@
+{
+  "suites": [
+    {
+      "name": "Critical Payment Verification Tests",
+      "results": [
+        {
+          "name": "SETUP - Get active game and product",
+          "status": "FAIL",
+          "duration": 1146,
+          "error": {
+            "message": "Should fetch games",
+            "stack": "Error: Should fetch games\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:73:26)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:84:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:82:3)",
+            "type": "NETWORK_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:27.975Z"
+        },
+        {
+          "name": "PAYMENT FLOW #1 - QR must generate successfully",
+          "status": "FAIL",
+          "duration": 1107,
+          "error": {
+            "message": "Order creation should succeed",
+            "stack": "Error: Order creation should succeed\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:73:26)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:107:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:98:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:29.082Z"
+        },
+        {
+          "name": "PAYMENT FLOW #2 - QR must have valid KHQR format",
+          "status": "FAIL",
+          "duration": 1005,
+          "error": {
+            "message": "Cannot read properties of undefined (reading 'startsWith')",
+            "stack": "TypeError: Cannot read properties of undefined (reading 'startsWith')\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:123:15)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:113:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:30.087Z"
+        },
+        {
+          "name": "PAYMENT FLOW #3 - QR must contain correct amount",
+          "status": "FAIL",
+          "duration": 1561,
+          "error": {
+            "message": "Amount must be positive",
+            "stack": "Error: Amount must be positive\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:68:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:138:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:130:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:31.648Z"
+        },
+        {
+          "name": "PAYMENT FLOW #4 - QR must have payment reference",
+          "status": "FAIL",
+          "duration": 1192,
+          "error": {
+            "message": "Payment reference must exist",
+            "stack": "Error: Payment reference must exist\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:68:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:150:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:143:3)",
+            "type": "PAYMENT_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:32.840Z"
+        },
+        {
+          "name": "PAYMENT FLOW #5 - QR must have MD5 hash for verification",
+          "status": "FAIL",
+          "duration": 1341,
+          "error": {
+            "message": "MD5 hash must exist for payment verification",
+            "stack": "Error: MD5 hash must exist for payment verification\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:68:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:162:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:155:3)",
+            "type": "PAYMENT_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:34.181Z"
+        },
+        {
+          "name": "PAYMENT FLOW #6 - QR must have expiration time",
+          "status": "FAIL",
+          "duration": 502,
+          "error": {
+            "message": "Expiration time must exist",
+            "stack": "Error: Expiration time must exist\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:68:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:174:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:167:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:34.683Z"
+        },
+        {
+          "name": "PAYMENT FLOW #7 - Order must be created with PENDING status",
+          "status": "FAIL",
+          "duration": 253,
+          "error": {
+            "message": "Order creation should succeed",
+            "stack": "Error: Order creation should succeed\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:73:26)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:197:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:189:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:34.936Z"
+        },
+        {
+          "name": "PAYMENT FLOW #8 - Payment simulation endpoint must exist",
+          "status": "PASS",
+          "duration": 10,
+          "timestamp": "2026-05-05T03:37:34.946Z"
+        },
+        {
+          "name": "PAYMENT FLOW #9 - Payment simulation should succeed",
+          "status": "FAIL",
+          "duration": 14,
+          "error": {
+            "message": "Payment simulation should succeed",
+            "stack": "Error: Payment simulation should succeed\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:73:26)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:223:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:221:3)",
+            "type": "PAYMENT_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:34.960Z"
+        },
+        {
+          "name": "PAYMENT FLOW #10 - Order status must update to PAID after payment",
+          "status": "FAIL",
+          "duration": 1157,
+          "error": {
+            "message": "Should retrieve order",
+            "stack": "Error: Should retrieve order\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:73:26)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:235:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:230:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:36.117Z"
+        },
+        {
+          "name": "PAYMENT FLOW #11 - Order paidAt timestamp must be set",
+          "status": "FAIL",
+          "duration": 5,
+          "error": {
+            "message": "paidAt timestamp must be set after payment",
+            "stack": "Error: paidAt timestamp must be set after payment\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:68:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:248:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:246:3)",
+            "type": "PAYMENT_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:36.122Z"
+        },
+        {
+          "name": "PAYMENT FLOW #12 - Payment verification via MD5 hash should work",
+          "status": "PASS",
+          "duration": 0,
+          "timestamp": "2026-05-05T03:37:36.122Z"
+        },
+        {
+          "name": "PAYMENT FLOW #13 - Delivery should be triggered after payment",
+          "status": "FAIL",
+          "duration": 2019,
+          "error": {
+            "message": "Should retrieve order",
+            "stack": "Error: Should retrieve order\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:73:26)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:271:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:266:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:38.141Z"
+        },
+        {
+          "name": "PAYMENT FLOW #14 - Duplicate payment must be prevented",
+          "status": "FAIL",
+          "duration": 4,
+          "error": {
+            "message": "First payment should succeed",
+            "stack": "Error: First payment should succeed\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:68:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:288:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:285:3)",
+            "type": "PAYMENT_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:38.145Z"
+        },
+        {
+          "name": "PAYMENT FLOW #15 - COMPLETE FLOW: Create → Pay → Verify → Deliver",
+          "status": "FAIL",
+          "duration": 4,
+          "error": {
+            "message": "Order creation should succeed",
+            "stack": "Error: Order creation should succeed\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:73:26)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:312:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:303:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:38.149Z"
+        },
+        {
+          "name": "PAYMENT FLOW #16 - Expired QR should not accept payment",
+          "status": "FAIL",
+          "duration": 5,
+          "error": {
+            "message": "Invalid time value",
+            "stack": "RangeError: Invalid time value\n    at Date.toISOString (<anonymous>)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:358:44)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:350:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:38.154Z"
+        },
+        {
+          "name": "PAYMENT FLOW #17 - Wrong amount payment should be detected",
+          "status": "PASS",
+          "duration": 7,
+          "timestamp": "2026-05-05T03:37:38.161Z"
+        },
+        {
+          "name": "PAYMENT FLOW #18 - QR generation must complete in <2 seconds",
+          "status": "FAIL",
+          "duration": 4,
+          "error": {
+            "message": "Order creation should succeed",
+            "stack": "Error: Order creation should succeed\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:73:26)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:397:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:386:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:38.165Z"
+        },
+        {
+          "name": "PAYMENT FLOW #19 - Payment verification must complete in <1 second",
+          "status": "FAIL",
+          "duration": 10,
+          "error": {
+            "message": "Verification should succeed",
+            "stack": "Error: Verification should succeed\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:73:26)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:414:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:31:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\critical-payment-verification.test.ts:402:3)",
+            "type": "ASSERTION_ERROR"
+          },
+          "timestamp": "2026-05-05T03:37:38.175Z"
+        }
+      ],
+      "totalTests": 20,
+      "passed": 3,
+      "failed": 17,
+      "skipped": 0,
+      "duration": 11346,
+      "timestamp": "2026-05-05T03:37:38.175Z"
+    }
+  ],
+  "totalTests": 20,
+  "passed": 3,
+  "failed": 17,
+  "skipped": 0,
+  "duration": 11346,
+  "timestamp": "2026-05-05T03:37:26.829Z",
+  "environment": {
+    "nodeVersion": "v24.13.1",
+    "platform": "win32",
+    "baseUrl": "http://localhost:3000"
+  },
+  "errors": {
+    "total": 17,
+    "byType": {
+      "NETWORK_ERROR": 1,
+      "ASSERTION_ERROR": 11,
+      "PAYMENT_ERROR": 5
+    },
+    "critical": []
+  }
+}

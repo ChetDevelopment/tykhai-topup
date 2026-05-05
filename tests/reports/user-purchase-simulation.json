@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-05-05T04:08:43.217Z",
+  "configuration": {
+    "totalUsers": 50,
+    "concurrentUsers": 5,
+    "testDuration": 60000,
+    "thinkTime": {
+      "min": 2000,
+      "max": 8000
+    }
+  },
+  "summary": {
+    "totalUsers": 46,
+    "successfulUsers": 10,
+    "failedUsers": 46,
+    "successRate": 21.74,
+    "testDuration": 68160
+  },
+  "performance": {
+    "totalRequests": 137,
+    "requestsPerSecond": 2.01,
+    "purchasesPerMinute": 8.8,
+    "avgResponseTime": "1323",
+    "p50ResponseTime": 973,
+    "p95ResponseTime": 4698,
+    "p99ResponseTime": 6195
+  },
+  "actions": {
+    "browse": 111,
+    "checkout": 16
+  },
+  "errors": {},
+  "rating": "POOR"
+}

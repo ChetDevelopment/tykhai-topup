@@ -1,0 +1,95 @@
+[
+  {
+    "concurrency": 10,
+    "totalTime": 35008,
+    "totalRequests": 2780,
+    "successfulRequests": 0,
+    "failedRequests": 2780,
+    "successRate": 0,
+    "avgResponseTime": "159",
+    "p50ResponseTime": 34,
+    "p95ResponseTime": 553,
+    "p99ResponseTime": 675,
+    "maxResponseTime": 851,
+    "requestsPerSecond": 79.41,
+    "ordersCreated": 0,
+    "paymentsSimulated": 0,
+    "errors": {
+      "Order Creation 403": 2779,
+      "Order Creation 429": 1
+    }
+  },
+  {
+    "concurrency": 50,
+    "totalTime": 35014,
+    "totalRequests": 14519,
+    "successfulRequests": 0,
+    "failedRequests": 17251,
+    "successRate": 0,
+    "avgResponseTime": "2385",
+    "p50ResponseTime": 2152,
+    "p95ResponseTime": 4604,
+    "p99ResponseTime": 9111,
+    "maxResponseTime": 9750,
+    "requestsPerSecond": 414.66,
+    "ordersCreated": 0,
+    "paymentsSimulated": 0,
+    "errors": {
+      "Order Creation 403": 11617,
+      "": 2563,
+      "Unknown error": 2563,
+      "TIMEOUT": 169,
+      "Request timeout": 169,
+      "socket hang up": 169,
+      "Order Creation 429": 1
+    }
+  },
+  {
+    "concurrency": 100,
+    "totalTime": 35018,
+    "totalRequests": 28922,
+    "successfulRequests": 0,
+    "failedRequests": 45418,
+    "successRate": 0,
+    "avgResponseTime": "2447",
+    "p50ResponseTime": 2160,
+    "p95ResponseTime": 5721,
+    "p99ResponseTime": 8367,
+    "maxResponseTime": 9949,
+    "requestsPerSecond": 825.92,
+    "ordersCreated": 0,
+    "paymentsSimulated": 0,
+    "errors": {
+      "Order Creation 403": 12204,
+      "": 16274,
+      "Unknown error": 16274,
+      "TIMEOUT": 222,
+      "Request timeout": 222,
+      "socket hang up": 222
+    }
+  },
+  {
+    "concurrency": 200,
+    "totalTime": 39629,
+    "totalRequests": 57744,
+    "successfulRequests": 0,
+    "failedRequests": 101875,
+    "successRate": 0,
+    "avgResponseTime": "2351",
+    "p50ResponseTime": 2132,
+    "p95ResponseTime": 4532,
+    "p99ResponseTime": 8156,
+    "maxResponseTime": 9891,
+    "requestsPerSecond": 1457.11,
+    "ordersCreated": 0,
+    "paymentsSimulated": 0,
+    "errors": {
+      "Order Creation 403": 13269,
+      "": 43717,
+      "Unknown error": 43717,
+      "TIMEOUT": 414,
+      "Request timeout": 414,
+      "socket hang up": 344
+    }
+  }
+]

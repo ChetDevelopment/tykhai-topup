@@ -41,10 +41,18 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   secret: process.env.NEXTAUTH_SECRET,
+  // Ensure proper session configuration
   session: {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
+  // Configure pages to avoid redirect loops
+  pages: {
+    signIn: "/login",
+    error: "/login",
+  },
+  // Debug mode in development
+  debug: process.env.NODE_ENV === "development",
   callbacks: {
     async jwt({ token, user, account }) {
       if (user) {

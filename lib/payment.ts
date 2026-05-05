@@ -20,6 +20,11 @@ import {
   PAYMENT_PROVIDERS,
 } from "./payment-types";
 import { hashSha256, encryptField } from "./encryption";
+import {
+  canDispatchNewJobs,
+  canRetryJobs,
+  getWorkerConcurrencyLimit,
+} from "./backpressure";
 
 // ===================== KHQR Generation Helpers =====================
 
@@ -263,13 +268,14 @@ async function bakongApiRequest(endpoint: string, payload: unknown): Promise<any
 }
 
 export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerificationResult> {
+  const startTime = Date.now();
   console.log("[Bakong Check] Checking payment status for MD5:", md5Hash);
   console.log("[Bakong Check] BAKONG_API_BASE:", BAKONG_API_BASE);
   console.log("[Bakong Check] Simulation mode:", SIM_MODE);
   
   if (SIM_MODE) {
     console.log("[Bakong Check] Simulation mode - returning mock paid");
-    return {
+    const mockResult: PaymentVerificationResult = {
       status: "PAID",
       paid: true,
       message: "Payment confirmed (SIMULATION)",
@@ -277,6 +283,8 @@ export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerifi
       currency: "USD",
       transactionId: `SIM-${Date.now()}`,
     };
+    await logPaymentVerification("SIMULATION", md5Hash, mockResult, 1, Date.now() - startTime);
+    return mockResult;
   }
 
   if (!BAKONG_TOKEN) {
@@ -290,10 +298,12 @@ export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerifi
   }
 
   if (!md5Hash || md5Hash.length !== 32) {
-    return { status: "FAILED", paid: false, message: `Invalid MD5 hash` };
+    const failedResult: PaymentVerificationResult = { status: "FAILED", paid: false, message: `Invalid MD5 hash` };
+    await logPaymentVerification("UNKNOWN", md5Hash, failedResult, 1, Date.now() - startTime);
+    return failedResult;
   }
 
-  const maxRetries = 3;
+  const maxRetries = 5;
   let lastError: any = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -303,47 +313,66 @@ export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerifi
       const data = result.data ?? result.result ?? result.transaction ?? result;
 
       if (responseCode === 0 && data) {
-        // Check payment status - Bakong API may return status in different fields
         const status = String(data.status ?? data.state ?? data.transactionStatus ?? data.paymentStatus ?? "").toUpperCase();
         
-        // Payment is confirmed if:
-        // 1. Status field says PAID/COMPLETED/SUCCESS, OR
-        // 2. acknowledgedDateMs exists (payment was acknowledged by receiver)
         const isPaid = 
           status === "PAID" || 
           status === "COMPLETED" || 
           status === "SUCCESS" ||
           (data.acknowledgedDateMs && typeof data.acknowledgedDateMs === 'number');
 
-        return {
-          status: isPaid ? "PAID" : "PENDING",
-          paid: isPaid,
-          paidAt: data.acknowledgedDateMs ? new Date(data.acknowledgedDateMs) : undefined,
-          transactionId: data.hash || data.transactionId || md5Hash,
-          amount: data.amount ? parseFloat(String(data.amount)) : undefined,
-          currency: data.currency || "USD",
-          rawResponse: result,
-        };
+        if (isPaid) {
+          const successResult: PaymentVerificationResult = {
+            status: "PAID",
+            paid: true,
+            paidAt: data.acknowledgedDateMs ? new Date(data.acknowledgedDateMs) : undefined,
+            transactionId: data.hash || data.transactionId || md5Hash,
+            amount: data.amount ? parseFloat(String(data.amount)) : undefined,
+            currency: data.currency || "USD",
+            rawResponse: result,
+          };
+          await logPaymentVerification("UNKNOWN", md5Hash, successResult, attempt, Date.now() - startTime);
+          return successResult;
+        }
+
+        if (status === "PENDING" || status === "PROCESSING") {
+          if (attempt < maxRetries) {
+            const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+        }
+        
+        const pendingResult: PaymentVerificationResult = { status: "PENDING", paid: false, rawResponse: result };
+        await logPaymentVerification("UNKNOWN", md5Hash, pendingResult, attempt, Date.now() - startTime);
+        return pendingResult;
       }
 
       if (responseCode !== 0) {
         if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+          const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+          await new Promise(r => setTimeout(r, delay));
           continue;
         }
       }
       
-      return { status: "PENDING", paid: false, rawResponse: result };
-    } catch (err) {
+      const pendingResult: PaymentVerificationResult = { status: "PENDING", paid: false, rawResponse: result };
+      await logPaymentVerification("UNKNOWN", md5Hash, pendingResult, attempt, Date.now() - startTime);
+      return pendingResult;
+    } catch (err: any) {
       lastError = err;
+      console.error(`[Bakong Check] Attempt ${attempt} failed:`, err.message);
       if (attempt < maxRetries) {
-        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+        const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+        await new Promise(r => setTimeout(r, delay));
         continue;
       }
     }
   }
 
-  return { status: "FAILED", paid: false, message: lastError?.message || "Bakong API error" };
+  const failedResult: PaymentVerificationResult = { status: "FAILED", paid: false, message: lastError?.message || "Bakong API error" };
+  await logPaymentVerification("UNKNOWN", md5Hash, failedResult, maxRetries, Date.now() - startTime);
+  return failedResult;
 }
 
 // ===================== Amount Validation =====================
@@ -379,6 +408,101 @@ async function logPaymentEvent(entry: {
   try {
     await logSecurityEvent("PAYMENT_EVENT", entry, {} as any);
   } catch {}
+}
+
+// Enhanced payment logging for debugging
+export async function logPaymentVerification(
+  orderNumber: string,
+  md5Hash: string,
+  result: PaymentVerificationResult,
+  attempt: number,
+  duration: number
+) {
+  console.log(`[Payment Log] Verification - Order: ${orderNumber}, MD5: ${md5Hash}, Attempt: ${attempt}, Duration: ${duration}ms, Result: ${result.status}`);
+  
+  try {
+    await prisma.paymentLog.create({
+      data: {
+        orderId: orderNumber,
+        event: "PAYMENT_VERIFICATION",
+        status: result.status as any,
+        paymentRef: md5Hash,
+        amount: result.amount,
+        currency: result.currency,
+        provider: "BAKONG",
+        responseMessage: result.message,
+        metadata: {
+          attempt,
+          duration,
+          transactionId: result.transactionId,
+          paidAt: result.paidAt?.toISOString(),
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[Payment Log] Failed to create log:", err);
+  }
+}
+
+export async function logPaymentStateTransition(
+  orderNumber: string,
+  fromState: string,
+  toState: string,
+  triggeredBy: string,
+  success: boolean,
+  error?: string
+) {
+  console.log(`[Payment Log] State Transition - Order: ${orderNumber}, ${fromState} → ${toState}, By: ${triggeredBy}, Success: ${success}${error ? `, Error: ${error}` : ''}`);
+  
+  try {
+    await prisma.paymentLog.create({
+      data: {
+        orderId: orderNumber,
+        event: "STATE_TRANSITION",
+        status: toState as any,
+        provider: "SYSTEM",
+        responseMessage: error,
+        metadata: {
+          fromState,
+          toState,
+          triggeredBy,
+          success,
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[Payment Log] Failed to create log:", err);
+  }
+}
+
+export async function logDeliveryAttempt(
+  orderNumber: string,
+  provider: string,
+  success: boolean,
+  duration: number,
+  error?: string
+) {
+  console.log(`[Payment Log] Delivery - Order: ${orderNumber}, Provider: ${provider}, Success: ${success}, Duration: ${duration}ms${error ? `, Error: ${error}` : ''}`);
+  
+  try {
+    await prisma.paymentLog.create({
+      data: {
+        orderId: orderNumber,
+        event: "DELIVERY_ATTEMPT",
+        status: success ? "SUCCESS" : "FAILED",
+        provider,
+        responseMessage: error,
+        metadata: {
+          success,
+          duration,
+          timestamp: new Date().toISOString(),
+        },
+      },
+    });
+  } catch (err) {
+    console.error("[Payment Log] Failed to create log:", err);
+  }
 }
 
 // ===================== DISTRIBUTED LOCKING (Hardened) =====================

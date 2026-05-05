@@ -1,0 +1,179 @@
+{
+  "suites": [
+    {
+      "name": "API Tests - Orders",
+      "results": [
+        {
+          "name": "GET /api/games - should return active games list",
+          "status": "FAIL",
+          "duration": 118,
+          "error": {
+            "message": "Expected status 200, got 403",
+            "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:62:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:76:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:74:3)",
+            "type": "HTTP_ERROR",
+            "timestamp": "2026-05-05T03:40:09.946Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.946Z"
+        },
+        {
+          "name": "GET /api/products - should return products for game",
+          "status": "FAIL",
+          "duration": 10,
+          "error": {
+            "message": "Should have at least one game",
+            "stack": "Error: Should have at least one game\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:90:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:88:3)",
+            "type": "ASSERTION_ERROR",
+            "timestamp": "2026-05-05T03:40:09.956Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.956Z"
+        },
+        {
+          "name": "POST /api/orders - should create order with BAKONG payment",
+          "status": "FAIL",
+          "duration": 0,
+          "error": {
+            "message": "Game and product must be set",
+            "stack": "Error: Game and product must be set\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:106:5)\n    at test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:13)\n    at runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:105:9)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+            "type": "ASSERTION_ERROR",
+            "timestamp": "2026-05-05T03:40:09.956Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.956Z"
+        },
+        {
+          "name": "POST /api/orders - should create order with KHR currency",
+          "status": "FAIL",
+          "duration": 0,
+          "error": {
+            "message": "Game and product must be set",
+            "stack": "Error: Game and product must be set\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:125:5)\n    at test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:13)\n    at runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:124:9)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+            "type": "ASSERTION_ERROR",
+            "timestamp": "2026-05-05T03:40:09.956Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.956Z"
+        },
+        {
+          "name": "POST /api/orders - should reject invalid email",
+          "status": "FAIL",
+          "duration": 14,
+          "error": {
+            "message": "Expected status 400, got 403",
+            "stack": "Error: Expected status 400, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:62:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:150:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:142:3)",
+            "type": "HTTP_ERROR",
+            "timestamp": "2026-05-05T03:40:09.970Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.970Z"
+        },
+        {
+          "name": "POST /api/orders - should reject invalid UID",
+          "status": "FAIL",
+          "duration": 16,
+          "error": {
+            "message": "Expected status 400, got 403",
+            "stack": "Error: Expected status 400, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:62:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:162:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:154:3)",
+            "type": "HTTP_ERROR",
+            "timestamp": "2026-05-05T03:40:09.986Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.986Z"
+        },
+        {
+          "name": "POST /api/orders - should handle idempotency key",
+          "status": "FAIL",
+          "duration": 0,
+          "error": {
+            "message": "Game and product must be set",
+            "stack": "Error: Game and product must be set\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:167:5)\n    at test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:13)\n    at runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:166:9)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+            "type": "ASSERTION_ERROR",
+            "timestamp": "2026-05-05T03:40:09.986Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.986Z"
+        },
+        {
+          "name": "GET /api/orders/[orderNumber] - should retrieve order details",
+          "status": "FAIL",
+          "duration": 1,
+          "error": {
+            "message": "Game and product must be set",
+            "stack": "Error: Game and product must be set\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:187:5)\n    at test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:13)\n    at runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:186:9)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+            "type": "ASSERTION_ERROR",
+            "timestamp": "2026-05-05T03:40:09.987Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.987Z"
+        },
+        {
+          "name": "GET /api/orders/[orderNumber] - should return 404 for non-existent order",
+          "status": "FAIL",
+          "duration": 11,
+          "error": {
+            "message": "Expected status 404, got 403",
+            "stack": "Error: Expected status 404, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:62:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:207:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:205:3)",
+            "type": "NOT_FOUND",
+            "timestamp": "2026-05-05T03:40:09.998Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.998Z"
+        },
+        {
+          "name": "POST /api/orders - should handle promo code",
+          "status": "FAIL",
+          "duration": 1,
+          "error": {
+            "message": "Game and product must be set",
+            "stack": "Error: Game and product must be set\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:211:5)\n    at test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:13)\n    at runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:210:9)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+            "type": "ASSERTION_ERROR",
+            "timestamp": "2026-05-05T03:40:09.999Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.999Z"
+        },
+        {
+          "name": "POST /api/orders - QR generation must complete in <2 seconds",
+          "status": "FAIL",
+          "duration": 0,
+          "error": {
+            "message": "Game and product must be set",
+            "stack": "Error: Game and product must be set\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:225:5)\n    at test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:13)\n    at runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:224:9)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+            "type": "ASSERTION_ERROR",
+            "timestamp": "2026-05-05T03:40:09.999Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.999Z"
+        },
+        {
+          "name": "POST /api/orders - should sanitize user input",
+          "status": "FAIL",
+          "duration": 0,
+          "error": {
+            "message": "Game and product must be set",
+            "stack": "Error: Game and product must be set\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:58:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:241:5)\n    at test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:20:13)\n    at runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\api\\orders.test.ts:240:9)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)",
+            "type": "ASSERTION_ERROR",
+            "timestamp": "2026-05-05T03:40:09.999Z"
+          },
+          "timestamp": "2026-05-05T03:40:09.999Z"
+        }
+      ],
+      "totalTests": 12,
+      "passed": 0,
+      "failed": 12,
+      "skipped": 0,
+      "duration": 171,
+      "timestamp": "2026-05-05T03:40:09.999Z"
+    }
+  ],
+  "totalTests": 12,
+  "passed": 0,
+  "failed": 12,
+  "skipped": 0,
+  "duration": 171,
+  "timestamp": "2026-05-05T03:40:09.828Z",
+  "environment": {
+    "nodeVersion": "v24.13.1",
+    "platform": "win32",
+    "baseUrl": "http://localhost:3000"
+  },
+  "errors": {
+    "total": 12,
+    "byType": {
+      "HTTP_ERROR": 3,
+      "ASSERTION_ERROR": 8,
+      "NOT_FOUND": 1
+    },
+    "critical": []
+  }
+}

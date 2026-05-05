@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
+import { rateLimit, RATE_LIMITS, checkIPBlock, blockIP } from "./lib/rate-limit";
 
 const SESSION_COOKIE = "tykhai_admin";
 const USER_COOKIE = "tykhai_user";
@@ -11,9 +12,41 @@ function getSecret() {
   return new TextEncoder().encode(secret);
 }
 
+// Rate limiter instances
+const loginLimiter = rateLimit(RATE_LIMITS.LOGIN);
+const registerLimiter = rateLimit(RATE_LIMITS.REGISTER);
+const paymentLimiter = rateLimit(RATE_LIMITS.PAYMENT);
+const ordersLimiter = rateLimit(RATE_LIMITS.ORDERS);
+const publicApiLimiter = rateLimit(RATE_LIMITS.PUBLIC_API);
+
 // Security-focused middleware
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Check IP block first
+  const ipBlockResponse = checkIPBlock(req);
+  if (ipBlockResponse) return ipBlockResponse;
+
+  // Apply rate limiting based on endpoint
+  let rateLimitResponse = null;
+  
+  if (pathname.startsWith("/api/auth/signin") || pathname.startsWith("/api/auth/register")) {
+    rateLimitResponse = await loginLimiter(req);
+  } else if (pathname.startsWith("/api/payment")) {
+    rateLimitResponse = await paymentLimiter(req);
+  } else if (pathname.startsWith("/api/orders")) {
+    rateLimitResponse = await ordersLimiter(req);
+  } else if (pathname.startsWith("/api/")) {
+    rateLimitResponse = await publicApiLimiter(req);
+  }
+  
+  if (rateLimitResponse) {
+    // Block IP after 3 rate limit violations
+    const forwarded = req.headers.get("x-forwarded-for");
+    const ip = forwarded ? forwarded.split(",")[0].trim() : "unknown";
+    blockIP(ip);
+    return rateLimitResponse;
+  }
 
   // Block suspicious requests early
   const userAgent = req.headers.get("user-agent") || "";
@@ -60,5 +93,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*"],
+  matcher: ["/admin/:path*", "/api/admin/:path*", "/api/:path*"],
 };

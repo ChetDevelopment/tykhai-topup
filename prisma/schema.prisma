@@ -94,7 +94,6 @@ model Order {
   failureReason       String?
   lockUntil           DateTime?
   lockedBy            String?
-  version             Int                 @default(0)
   ipAddress           String?
   userAgent           String?
   createdAt           DateTime            @default(now())
@@ -121,6 +120,7 @@ model Order {
   idempotencyKey      String?             @unique
   userId              String?
   metadata            Json                @default("{}")
+  version             Int                 @default(0)
   deliveryJobs        DeliveryJob[]
   deliveryLogs        DeliveryLog[]
   fraudFlags2         FraudFlag[]         @relation("OrderFraudFlags")
@@ -135,9 +135,11 @@ model Order {
   tickets             Ticket[]
   walletReservations  WalletReservation[] @relation("OrderWalletReservations")
 
-  @@index([status])
-  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([orderNumber])
   @@index([customerEmail])
+  @@index([paymentRef])
+  @@index([userId, createdAt])
 }
 
 model PaymentLog {

@@ -1,0 +1,127 @@
+{
+  "suites": [
+    {
+      "name": "E2E Tests - User Flow",
+      "results": [
+        {
+          "name": "E2E Flow - Browse games catalog",
+          "status": "PASS",
+          "duration": 571,
+          "timestamp": "2026-05-05T02:28:41.819Z"
+        },
+        {
+          "name": "E2E Flow - Select product from game",
+          "status": "PASS",
+          "duration": 778,
+          "timestamp": "2026-05-05T02:28:42.597Z"
+        },
+        {
+          "name": "E2E Flow - Create order with player details",
+          "status": "PASS",
+          "duration": 4245,
+          "timestamp": "2026-05-05T02:28:46.842Z"
+        },
+        {
+          "name": "E2E Flow - QR appears in under 2 seconds",
+          "status": "FAIL",
+          "duration": 3801,
+          "error": "QR took 3801ms, should be <2000ms",
+          "stack": "Error: QR took 3801ms, should be <2000ms\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:41:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:106:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:95:3)",
+          "timestamp": "2026-05-05T02:28:50.655Z"
+        },
+        {
+          "name": "E2E Flow - Verify order details",
+          "status": "PASS",
+          "duration": 2582,
+          "timestamp": "2026-05-05T02:28:53.237Z"
+        },
+        {
+          "name": "E2E Flow - Simulate payment success",
+          "status": "FAIL",
+          "duration": 254,
+          "error": "Expected status 200, got 403",
+          "stack": "Error: Expected status 200, got 403\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:41:27)\n    at assertStatus (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:45:5)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:124:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:121:3)",
+          "timestamp": "2026-05-05T02:28:53.492Z"
+        },
+        {
+          "name": "E2E Flow - Order status updates after payment",
+          "status": "FAIL",
+          "duration": 1454,
+          "error": "Order should be in paid state, got PENDING",
+          "stack": "Error: Order should be in paid state, got PENDING\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:41:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:137:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:129:3)",
+          "timestamp": "2026-05-05T02:28:54.946Z"
+        },
+        {
+          "name": "E2E Flow - Delivery triggers automatically",
+          "status": "FAIL",
+          "duration": 3055,
+          "error": "Order should be progressing through delivery",
+          "stack": "Error: Order should be progressing through delivery\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:41:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:153:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:144:3)",
+          "timestamp": "2026-05-05T02:28:58.001Z"
+        },
+        {
+          "name": "E2E Flow - KHR currency payment",
+          "status": "PASS",
+          "duration": 3268,
+          "timestamp": "2026-05-05T02:29:01.270Z"
+        },
+        {
+          "name": "E2E Flow - Wallet payment flow",
+          "status": "FAIL",
+          "duration": 3568,
+          "error": "Wallet payment should be handled",
+          "stack": "Error: Wallet payment should be handled\n    at assert (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:41:27)\n    at <anonymous> (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:187:5)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at async test (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:21:7)\n    at async runTests (C:\\Users\\USER\\Desktop\\tykhai-topup\\tests\\e2e\\user-flow.test.ts:177:3)",
+          "timestamp": "2026-05-05T02:29:04.838Z"
+        },
+        {
+          "name": "E2E Flow - Handle payment timeout",
+          "status": "PASS",
+          "duration": 3804,
+          "timestamp": "2026-05-05T02:29:08.642Z"
+        },
+        {
+          "name": "E2E Flow - Handle expired QR",
+          "status": "PASS",
+          "duration": 2967,
+          "timestamp": "2026-05-05T02:29:11.609Z"
+        },
+        {
+          "name": "E2E Flow - Rapid order creation (stress test)",
+          "status": "PASS",
+          "duration": 4466,
+          "timestamp": "2026-05-05T02:29:16.075Z"
+        },
+        {
+          "name": "E2E Flow - Order with special characters in UID",
+          "status": "PASS",
+          "duration": 3532,
+          "timestamp": "2026-05-05T02:29:19.607Z"
+        }
+      ],
+      "totalTests": 14,
+      "passed": 9,
+      "failed": 5,
+      "skipped": 0,
+      "duration": 38360,
+      "timestamp": "2026-05-05T02:29:19.608Z"
+    }
+  ],
+  "totalTests": 14,
+  "passed": 9,
+  "failed": 5,
+  "skipped": 0,
+  "duration": 38360,
+  "timestamp": "2026-05-05T02:28:41.248Z",
+  "environment": {
+    "nodeVersion": "v24.13.1",
+    "platform": "win32",
+    "baseUrl": "http://localhost:3000"
+  },
+  "errors": {
+    "total": 5,
+    "byType": {
+      "Unknown": 5
+    },
+    "critical": []
+  }
+}

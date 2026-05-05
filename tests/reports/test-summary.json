@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-05-05T02:26:33.588Z",
+  "totalSuites": 7,
+  "passed": 0,
+  "failed": 7,
+  "totalDuration": 15,
+  "results": [
+    {
+      "name": "API - Orders",
+      "success": false,
+      "duration": 4
+    },
+    {
+      "name": "API - Payment",
+      "success": false,
+      "duration": 2
+    },
+    {
+      "name": "API - Admin",
+      "success": false,
+      "duration": 1
+    },
+    {
+      "name": "E2E - User Flow",
+      "success": false,
+      "duration": 3
+    },
+    {
+      "name": "E2E - Payment Flow",
+      "success": false,
+      "duration": 2
+    },
+    {
+      "name": "Integration - Order/Payment/Delivery",
+      "success": false,
+      "duration": 2
+    },
+    {
+      "name": "Integration - DB Integrity",
+      "success": false,
+      "duration": 1
+    }
+  ],
+  "environment": {
+    "nodeVersion": "v24.13.1",
+    "platform": "win32",
+    "baseUrl": "http://localhost:3000"
+  }
+}

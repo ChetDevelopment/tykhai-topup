@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-05-05T04:02:42.982Z",
+  "results": [
+    {
+      "name": "Homepage Load",
+      "avgTime": "1620",
+      "minTime": 922,
+      "maxTime": 3022,
+      "successRate": "100.0",
+      "errors": []
+    },
+    {
+      "name": "Games List API",
+      "avgTime": "717",
+      "minTime": 273,
+      "maxTime": 1309,
+      "successRate": "100.0",
+      "errors": []
+    },
+    {
+      "name": "Products API",
+      "avgTime": "394",
+      "minTime": 281,
+      "maxTime": 822,
+      "successRate": "100.0",
+      "errors": []
+    },
+    {
+      "name": "Order Creation",
+      "avgTime": "2981",
+      "minTime": 2677,
+      "maxTime": 3901,
+      "successRate": "0.0",
+      "errors": [
+        "HTTP 404",
+        "HTTP 404",
+        "HTTP 404"
+      ]
+    }
+  ],
+  "overallAvg": "1428",
+  "overallSuccess": "75.0",
+  "rating": "GOOD"
+}

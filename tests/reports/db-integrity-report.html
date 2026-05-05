@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ty Khai TopUp - Test Report</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+    .container { max-width: 1400px; margin: 0 auto; }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 20px; }
+    .header h1 { font-size: 28px; margin-bottom: 10px; }
+    .header p { opacity: 0.9; }
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .summary-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+    .summary-card h3 { font-size: 14px; color: #666; margin-bottom: 10px; }
+    .summary-card .value { font-size: 32px; font-weight: bold; }
+    .summary-card.passed .value { color: #22c55e; }
+    .summary-card.failed .value { color: #ef4444; }
+    .summary-card.skipped .value { color: #f59e0b; }
+    .summary-card.total .value { color: #667eea; }
+    .error-summary { background: #fee2e2; border: 2px solid #ef4444; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    .error-summary h3 { color: #991b1b; margin-bottom: 10px; }
+    .error-summary .error-count { font-size: 24px; font-weight: bold; color: #ef4444; }
+    .error-types { margin-top: 10px; }
+    .error-type { display: inline-block; background: #fecaca; color: #991b1b; padding: 4px 12px; border-radius: 4px; margin: 4px; font-size: 13px; }
+    .suite { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 15px; overflow: hidden; }
+    .suite-header { padding: 15px 20px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+    .suite-header h2 { font-size: 18px; color: #333; }
+    .suite-stats { display: flex; gap: 15px; font-size: 14px; }
+    .suite-stats span { padding: 3px 8px; border-radius: 4px; }
+    .suite-stats .pass { background: #dcfce7; color: #166534; }
+    .suite-stats .fail { background: #fee2e2; color: #991b1b; }
+    .suite-stats .skip { background: #fef3c7; color: #92400e; }
+    .suite-body { padding: 10px 20px; }
+    .test-result { display: flex; align-items: flex-start; padding: 12px; border-bottom: 1px solid #f0f0f0; }
+    .test-result:last-child { border-bottom: none; }
+    .test-result .status { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 14px; font-weight: bold; flex-shrink: 0; }
+    .test-result .status.pass { background: #22c55e; color: white; }
+    .test-result .status.fail { background: #ef4444; color: white; }
+    .test-result .status.skip { background: #f59e0b; color: white; }
+    .test-result .content { flex: 1; }
+    .test-result .name { font-size: 14px; color: #333; font-weight: 500; margin-bottom: 4px; }
+    .test-result .duration { font-size: 12px; color: #666; }
+    .test-result .error-box { background: #fee2e2; border-left: 3px solid #ef4444; padding: 10px; margin-top: 8px; border-radius: 4px; }
+    .test-result .error-message { font-size: 13px; color: #991b1b; font-weight: 500; margin-bottom: 5px; }
+    .test-result .error-details { font-size: 12px; color: #7f1d1d; font-family: 'Courier New', monospace; white-space: pre-wrap; word-break: break-word; }
+    .test-result .error-stack { font-size: 11px; color: #991b1b; font-family: 'Courier New', monospace; white-space: pre-wrap; word-break: break-word; margin-top: 5px; padding-top: 5px; border-top: 1px solid #fecaca; }
+    .footer { text-align: center; padding: 20px; color: #666; font-size: 14px; }
+    .progress-bar { height: 6px; background: #e9ecef; border-radius: 3px; margin-top: 10px; overflow: hidden; }
+    .progress-bar .fill { height: 100%; background: linear-gradient(90deg, #22c55e, #22c55e); transition: width 0.3s; }
+    details { margin-bottom: 10px; }
+    summary { cursor: pointer; padding: 10px; background: #f8f9fa; border-radius: 4px; font-weight: 500; }
+    .critical-alert { background: #dc2626; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🧪 Ty Khai TopUp - Test Report</h1>
+      <p>Generated: 5/5/2026, 9:29:35 AM</p>
+      <p>Environment: win32 | Node: v24.13.1</p>
+      <div class="progress-bar">
+        <div class="fill" style="width: 53.85%"></div>
+      </div>
+    </div>
+
+    
+      <div class="critical-alert">
+        ⚠️ <strong>ALERT:</strong> 6 error(s) detected! 
+      </div>
+    
+
+    <div class="summary">
+      <div class="summary-card total">
+        <h3>Total Tests</h3>
+        <div class="value">13</div>
+      </div>
+      <div class="summary-card passed">
+        <h3>Passed</h3>
+        <div class="value">7</div>
+      </div>
+      <div class="summary-card failed">
+        <h3>Failed</h3>
+        <div class="value">6</div>
+      </div>
+      <div class="summary-card skipped">
+        <h3>Skipped</h3>
+        <div class="value">0</div>
+      </div>
+    </div>
+
+    
+      <div class="error-summary">
+        <h3>🚨 Error Summary</h3>
+        <div class="error-count">6 total error(s)</div>
+        <div class="error-types">
+          <span class="error-type">Unknown: 6</span>
+        </div>
+        
+      </div>
+    
+
+    <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+      <h3 style="margin-bottom: 10px;">Summary</h3>
+      <p><strong>Pass Rate:</strong> 53.85%</p>
+      <p><strong>Total Duration:</strong> 72.02s</p>
+      <p><strong>Base URL:</strong> http://localhost:3000</p>
+      <p><strong>Error Log:</strong> tests/reports/error-log.txt</p>
+    </div>
+
+    
+      <div class="suite">
+        <div class="suite-header">
+          <h2>Database Integrity Tests</h2>
+          <div class="suite-stats">
+            <span class="pass">✓ 7</span>
+            <span class="fail">✗ 6</span>
+            <span class="skip">○ 0</span>
+          </div>
+        </div>
+        <div class="suite-body">
+          
+            <div class="test-result">
+              <div class="status pass">
+                ✓
+              </div>
+              <div class="content">
+                <div class="name">SETUP - Initialize test data</div>
+                <div class="duration">1.588s</div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status pass">
+                ✓
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - No duplicate order numbers</div>
+                <div class="duration">14.956s</div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status pass">
+                ✓
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - No duplicate payment references</div>
+                <div class="duration">14.400s</div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status pass">
+                ✓
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - No orphan payment logs</div>
+                <div class="duration">3.953s</div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status pass">
+                ✓
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - Revenue calculation accuracy</div>
+                <div class="duration">8.696s</div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status pass">
+                ✓
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - Order state consistency</div>
+                <div class="duration">3.672s</div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status fail">
+                ✗
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - PaidAt timestamp set on payment</div>
+                <div class="duration">5.675s</div>
+                
+                  <div class="error-box">
+                    <div class="error-message">⚠️ Error: undefined</div>
+                    
+                    
+                    
+                  </div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status pass">
+                ✓
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - Idempotency key prevents duplicates</div>
+                <div class="duration">6.802s</div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status fail">
+                ✗
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - Email encryption</div>
+                <div class="duration">3.429s</div>
+                
+                  <div class="error-box">
+                    <div class="error-message">⚠️ Error: undefined</div>
+                    
+                    
+                    
+                  </div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status fail">
+                ✗
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - UID sanitization</div>
+                <div class="duration">0.049s</div>
+                
+                  <div class="error-box">
+                    <div class="error-message">⚠️ Error: undefined</div>
+                    
+                    
+                    
+                  </div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status fail">
+                ✗
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - Game reference valid</div>
+                <div class="duration">3.824s</div>
+                
+                  <div class="error-box">
+                    <div class="error-message">⚠️ Error: undefined</div>
+                    
+                    
+                    
+                  </div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status fail">
+                ✗
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - Product reference valid</div>
+                <div class="duration">4.462s</div>
+                
+                  <div class="error-box">
+                    <div class="error-message">⚠️ Error: undefined</div>
+                    
+                    
+                    
+                  </div>
+                
+              </div>
+            </div>
+          
+            <div class="test-result">
+              <div class="status fail">
+                ✗
+              </div>
+              <div class="content">
+                <div class="name">DB Integrity - Audit logs created for admin actions</div>
+                <div class="duration">0.505s</div>
+                
+                  <div class="error-box">
+                    <div class="error-message">⚠️ Error: undefined</div>
+                    
+                    
+                    
+                  </div>
+                
+              </div>
+            </div>
+          
+        </div>
+      </div>
+    
+
+    <div class="footer">
+      <p>Ty Khai TopUp Automated Testing Framework</p>
+      <p style="margin-top: 5px;">Error log saved to: tests/reports/error-log.txt</p>
+    </div>
+  </div>
+</body>
+</html>

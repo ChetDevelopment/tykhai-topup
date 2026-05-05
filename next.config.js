@@ -4,6 +4,8 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Enable HTTP keep-alive for better connection reuse
+  // Note: httpAgentOptions only available in Next.js 14+
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "*.vercel.app" },
