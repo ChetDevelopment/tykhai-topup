@@ -7,7 +7,7 @@
 import { z } from "zod";
 
 // ===================== Payment Method & Currency =====================
-export type PaymentMethod = "BAKONG" | "WALLET"; // Only Bakong KHQR + Wallet (for internal balance)
+export type PaymentMethod = "BAKONG" | "ABA" | "WALLET"; // Bakong KHQR + ABA PayWay + Wallet
 export type PaymentCurrency = "USD" | "KHR";
 
 // ===================== Payment Status State Machine =====================
