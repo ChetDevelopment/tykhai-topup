@@ -682,7 +682,8 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
 
                   {!selectedProduct.isMysteryBox && (
                     <div className="mt-8 pt-6 border-t border-royal-border">
-                       <SquadPoolUI productId={selectedProduct.id} />
+                       {/* SquadPoolUI temporarily disabled - database connection issue */}
+                       {/* <SquadPoolUI productId={selectedProduct.id} /> */}
                     </div>
                   )}
                 </div>
