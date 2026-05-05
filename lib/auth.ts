@@ -43,12 +43,18 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
         token.email = user.email;
+      }
+      // Persist the OAuth access token to the token so we can use it later
+      if (account) {
+        token.accessToken = account.access_token;
+        token.provider = account.provider;
       }
       return token;
     },
@@ -56,12 +62,51 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).id = token.id;
         session.user.email = token.email as string;
+        (session.user as any).accessToken = token.accessToken;
+        (session.user as any).provider = token.provider;
       }
       return session;
+    },
+    async signIn({ user, account }) {
+      // OAuth sign in
+      if (account?.provider === "google") {
+        // Make sure the user exists in our database
+        const existingUser = await prisma.user.findUnique({
+          where: { email: user.email! },
+        });
+        
+        if (!existingUser) {
+          // Create user if doesn't exist (should be handled by adapter, but just in case)
+          await prisma.user.create({
+            data: {
+              email: user.email!,
+              name: user.name || "",
+              role: "USER",
+            },
+          });
+        }
+      }
+      return true;
     },
   },
   pages: {
     signIn: "/login",
+  },
+  events: {
+    async createUser(message) {
+      console.log("[NextAuth] User created:", { 
+        id: message.user.id, 
+        email: message.user.email,
+        name: message.user.name 
+      });
+    },
+    async linkAccount(message) {
+      console.log("[NextAuth] Account linked:", {
+        userId: message.user.id,
+        provider: message.account.provider,
+        providerAccountId: message.account.providerAccountId,
+      });
+    },
   },
 };
 
@@ -196,26 +241,39 @@ export async function getCurrentUser(): Promise<UserSession | null> {
     }
   }
 
-  // 2. Try NextAuth Session (Social)
+  // 2. Try NextAuth Session (Social/Google login)
   if (!email) {
     const nextAuthSession = await getServerSession(authOptions);
-    if (nextAuthSession?.user) {
-      email = nextAuthSession.user.email!;
-      userId = (nextAuthSession.user as any).id;
+    if (nextAuthSession?.user?.email) {
+      email = nextAuthSession.user.email;
+      // NextAuth JWT session contains the user ID
+      userId = (nextAuthSession.user as any).id || null;
     }
   }
 
   if (!email && !userId) return null;
 
-  // 3. Unify both via Database lookup
+  // 3. Find user in database - try email first for NextAuth users
   const user = await prisma.user.findFirst({
     where: {
-      OR: [
-        { id: userId || undefined },
-        { email: email || undefined }
-      ]
+      email: email || undefined
     },
-    select: { id: true, email: true, name: true, role: true, vipRank: true, pointsBalance: true, walletBalance: true, totalSpentUsd: true }
+    select: { 
+      id: true, 
+      email: true, 
+      name: true, 
+      role: true, 
+      vipRank: true, 
+      pointsBalance: true, 
+      walletBalance: true,
+      totalSpentUsd: true,
+      accounts: {
+        select: {
+          provider: true,
+          providerAccountId: true
+        }
+      }
+    }
   });
 
   if (!user) return null;
