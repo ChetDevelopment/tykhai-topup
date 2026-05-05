@@ -421,7 +421,7 @@ async function deliverViaG2Bulk(order: any, deliveryJob: any): Promise<void> {
 /**
  * Check pending orders for payment confirmation
  */
-async function checkPendingPayments(): Promise<void> {
+export async function checkPendingPayments(): Promise<{ checked: number; updated: number; errors: number }> {
   const pendingOrders = await prisma.order.findMany({
     where: {
       status: "PENDING",
@@ -435,6 +435,10 @@ async function checkPendingPayments(): Promise<void> {
     },
     take: ORDER_BATCH_SIZE,
   });
+
+  let checked = 0;
+  let updated = 0;
+  let errors = 0;
 
   for (const order of pendingOrders) {
     try {
@@ -452,12 +456,16 @@ async function checkPendingPayments(): Promise<void> {
         });
 
         console.log(`[Worker] Payment confirmed via polling for ${order.orderNumber}`);
-        stats.processed++;
+        updated++;
       }
+      checked++;
     } catch (error) {
-      // Silently fail - will retry next batch
+      console.error(`[Worker] Error checking order ${order.orderNumber}:`, error);
+      errors++;
     }
   }
+
+  return { checked, updated, errors };
 }
 
 /**
