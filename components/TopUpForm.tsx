@@ -49,7 +49,7 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
   const [serverId, setServerId] = useState(
     ZONE_ID_SLUGS.has(game.slug) ? "" : (game.servers[0] ?? "")
   );
-  const [method, setMethod] = useState<"BAKONG" | "WALLET">("BAKONG");
+  const [method, setMethod] = useState<"BAKONG" | "ABA" | "WALLET">("BAKONG");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -600,6 +600,33 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
                 </div>
                 <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${method === "BAKONG" ? "border-royal-primary bg-royal-primary" : "border-royal-border"}`}>
                   {method === "BAKONG" && <Check className="h-3 w-3 text-black" strokeWidth={3} />}
+                </div>
+              </div>
+            </button>
+
+            {/* ABA PayWay Payment Option */}
+            <button
+              type="button"
+              onClick={() => { setMethod("ABA"); setWalletActive(false); }}
+              className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full ${
+                method === "ABA"
+                  ? "border-green-500 bg-gradient-to-br from-green-500/15 to-green-600/5 shadow-lg shadow-green-500/20"
+                  : "border-royal-border bg-royal-card hover:border-green-500/50"
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/30 text-green-500 transition-transform group-hover:scale-110">
+                  <ShieldCheck className="h-6 w-6" strokeWidth={2} />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold">ABA PayWay</span>
+                    <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-400">SECURE</span>
+                  </div>
+                  <div className="text-xs text-royal-muted">Pay with ABA Mobile or ABA PayWay gateway.</div>
+                </div>
+                <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${method === "ABA" ? "border-green-500 bg-green-500" : "border-royal-border"}`}>
+                  {method === "ABA" && <Check className="h-3 w-3 text-black" strokeWidth={3} />}
                 </div>
               </div>
             </button>
