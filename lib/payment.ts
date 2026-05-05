@@ -46,9 +46,11 @@ function crc16(data: string): string {
 // - Production mode: Uses real Bakong API, real money transactions
 // Default: Production mode (real payments) unless explicitly enabled
 const SIM_MODE = process.env.PAYMENT_SIMULATION_MODE === "true" || process.env.ENABLE_DEV_BAKONG === "true";
+const BAKONG_API_BASE = process.env.BAKONG_API_BASE || "https://merchant-qr.bakong.org.kh";
 const BAKONG_ACCOUNT = process.env.BAKONG_ACCOUNT;
 const BAKONG_MERCHANT_NAME = process.env.BAKONG_MERCHANT_NAME;
 const BAKONG_MERCHANT_CITY = process.env.BAKONG_MERCHANT_CITY || "Phnom Penh";
+const BAKONG_TOKEN = process.env.BAKONG_TOKEN;
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
 // ===================== UNIFIED PAYMENT FACTORY =====================
@@ -90,9 +92,11 @@ export async function initiatePayment(args: InitiatePaymentArgs): Promise<Paymen
 
 async function initiateBakong(args: InitiatePaymentArgs): Promise<PaymentInitResult> {
   console.log("[Bakong] Checking credentials...");
+  console.log("[Bakong] BAKONG_API_BASE:", BAKONG_API_BASE);
   console.log("[Bakong] BAKONG_ACCOUNT:", BAKONG_ACCOUNT ? "SET" : "MISSING");
   console.log("[Bakong] BAKONG_MERCHANT_NAME:", BAKONG_MERCHANT_NAME ? "SET" : "MISSING");
   console.log("[Bakong] BAKONG_MERCHANT_CITY:", BAKONG_MERCHANT_CITY || "Phnom Penh");
+  console.log("[Bakong] BAKONG_TOKEN:", BAKONG_TOKEN ? "SET (length: " + BAKONG_TOKEN.length + ")" : "MISSING");
   
   if (!BAKONG_ACCOUNT || !BAKONG_MERCHANT_NAME) {
     console.error("[Bakong] Configuration error - missing credentials!");
@@ -260,6 +264,8 @@ async function bakongApiRequest(endpoint: string, payload: unknown): Promise<any
 
 export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerificationResult> {
   console.log("[Bakong Check] Checking payment status for MD5:", md5Hash);
+  console.log("[Bakong Check] BAKONG_API_BASE:", BAKONG_API_BASE);
+  console.log("[Bakong Check] Simulation mode:", SIM_MODE);
   
   if (SIM_MODE) {
     console.log("[Bakong Check] Simulation mode - returning mock paid");
@@ -276,6 +282,11 @@ export async function checkBakongPayment(md5Hash: string): Promise<PaymentVerifi
   if (!BAKONG_TOKEN) {
     console.error("[Bakong Check] Missing BAKONG_TOKEN");
     throw PaymentError.configurationError("Bakong");
+  }
+
+  if (!BAKONG_API_BASE) {
+    console.error("[Bakong Check] Missing BAKONG_API_BASE");
+    throw PaymentError.configurationError("Bakong API Base");
   }
 
   if (!md5Hash || md5Hash.length !== 32) {
