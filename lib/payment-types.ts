@@ -110,6 +110,12 @@ export const PAYMENT_PROVIDERS: Record<PaymentMethod, PaymentProviderConfig> = {
     currencies: ["USD", "KHR"],
     minAmount: 0.50,
   },
+  ABA: {
+    enabled: true,
+    displayName: "ABA PayWay",
+    currencies: ["USD", "KHR"],
+    minAmount: 0.50,
+  },
   WALLET: {
     enabled: true,
     displayName: "Ty Khai Wallet",
@@ -126,7 +132,7 @@ export const CreateOrderSchema = z.object({
   serverId: z.string().optional(),
   customerEmail: z.string().email().optional(),
   customerPhone: z.string().optional(),
-  paymentMethod: z.enum(["WALLET", "BAKONG"]), // Only Bakong + Wallet
+  paymentMethod: z.enum(["WALLET", "BAKONG", "ABA"]), // Bakong + Wallet + ABA
   currency: z.enum(["USD", "KHR"]).optional().default("USD"),
   promoCode: z.string().optional(),
   playerNickname: z.string().max(100).optional(),

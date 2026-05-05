@@ -237,7 +237,7 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
     setSubmitting(true);
     setError(null);
 
-    const paymentMethod = walletActive ? "WALLET" : "BAKONG";
+    const paymentMethod = walletActive ? "WALLET" : method;
     const usePoints = walletActive && pointsInput ? Math.min(Number(pointsInput) || 0, user?.pointsBalance || 0) : 0;
 
     try {
@@ -524,7 +524,7 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
               <button
                 type="button"
                 onClick={() => { setWalletActive(!walletActive); setMethod(walletActive ? "BAKONG" : "WALLET"); }}
-                className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full mb-3 ${
+                className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full mb-4 ${
                   walletActive
                     ? "border-royal-accent bg-gradient-to-br from-royal-accent/15 to-royal-gold/5 shadow-lg shadow-royal-accent/20"
                     : "border-royal-border bg-royal-card hover:border-royal-accent/50"
@@ -581,65 +581,63 @@ export default function TopUpForm({ game, products }: { game: Game; products: Pr
              <button
                type="button"
                onClick={() => { setMethod("BAKONG"); setWalletActive(false); }}
-               className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full ${
+               className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full mb-4 ${
                  !walletActive
                    ? "border-royal-primary bg-gradient-to-br from-royal-primary/15 to-royal-accent/5 shadow-lg shadow-royal-primary/20"
                    : "border-royal-border bg-royal-card hover:border-royal-primary/50"
                }`}
              >
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-royal-primary/20 to-royal-accent/10 border border-royal-primary/30 text-royal-primary transition-transform group-hover:scale-110">
-                  <QrCode className="h-6 w-6" strokeWidth={2} />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">KHQR · Bakong Payment</span>
-                    <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-400">INSTANT</span>
-                  </div>
-                  <div className="text-xs text-royal-muted">Scan QR with Bakong, ABA, Wing & more.</div>
-                </div>
-                <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${method === "BAKONG" ? "border-royal-primary bg-royal-primary" : "border-royal-border"}`}>
-                  {method === "BAKONG" && <Check className="h-3 w-3 text-black" strokeWidth={3} />}
-                </div>
-              </div>
-            </button>
+               <div className="flex items-center gap-4">
+                 <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white border border-royal-primary/30 overflow-hidden transition-transform group-hover:scale-110 shrink-0">
+                   <img 
+                     src="/bakong-logo.png?v=1" 
+                     alt="Bakong KHQR" 
+                     className="h-10 w-10 object-contain"
+                   />
+                 </div>
+                 <div className="flex-1 min-w-0">
+                   <div className="flex items-center gap-2">
+                     <span className="font-semibold text-base">KHQR · Bakong Payment</span>
+                     <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-400 whitespace-nowrap">INSTANT</span>
+                   </div>
+                   <div className="text-xs text-royal-muted mt-0.5">Scan QR with Bakong, ABA, Wing & more.</div>
+                 </div>
+                 <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${method === "BAKONG" ? "border-royal-primary bg-royal-primary" : "border-royal-border"}`}>
+                   {method === "BAKONG" && <Check className="h-3 w-3 text-black" strokeWidth={3} />}
+                 </div>
+               </div>
+             </button>
 
-            {/* ABA PayWay Payment Option */}
-            <button
-              type="button"
-              onClick={() => { setMethod("ABA"); setWalletActive(false); }}
-              className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full ${
-                method === "ABA"
-                  ? "border-green-500 bg-gradient-to-br from-green-500/15 to-green-600/5 shadow-lg shadow-green-500/20"
-                  : "border-royal-border bg-royal-card hover:border-green-500/50"
-              }`}
-            >
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white border border-green-500/30 overflow-hidden transition-transform group-hover:scale-110">
-                  <img 
-                    src="/aba-logo.png" 
-                    alt="ABA" 
-                    className="h-8 w-8 object-contain"
-                    onError={(e) => {
-                      // Fallback to text if image not found
-                      (e.target as HTMLImageElement).style.display = 'none';
-                      (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                    }}
-                  />
-                  <span className="hidden font-bold text-green-600 text-sm">ABA</span>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">ABA PayWay</span>
-                    <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-400">SECURE</span>
-                  </div>
-                  <div className="text-xs text-royal-muted">Pay with ABA Mobile or ABA PayWay gateway.</div>
-                </div>
-                <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center ${method === "ABA" ? "border-green-500 bg-green-500" : "border-royal-border"}`}>
-                  {method === "ABA" && <Check className="h-3 w-3 text-black" strokeWidth={3} />}
-                </div>
-              </div>
-            </button>
+             {/* ABA PayWay Payment Option */}
+             <button
+               type="button"
+               onClick={() => { setMethod("ABA"); setWalletActive(false); }}
+               className={`group relative rounded-xl border-2 p-4 sm:p-5 text-left transition-all duration-300 w-full ${
+                 method === "ABA"
+                   ? "border-green-500 bg-gradient-to-br from-green-500/15 to-green-600/5 shadow-lg shadow-green-500/20"
+                   : "border-royal-border bg-royal-card hover:border-green-500/50"
+               }`}
+             >
+               <div className="flex items-center gap-4">
+                 <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white border border-green-500/30 overflow-hidden transition-transform group-hover:scale-110 shrink-0">
+                   <img 
+                     src="/aba-logo.png?v=2" 
+                     alt="ABA PayWay" 
+                     className="h-10 w-10 object-contain"
+                   />
+                 </div>
+                 <div className="flex-1 min-w-0">
+                   <div className="flex items-center gap-2">
+                     <span className="font-semibold text-base">ABA PayWay</span>
+                     <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-400 whitespace-nowrap">SECURE</span>
+                   </div>
+                   <div className="text-xs text-royal-muted mt-0.5">Pay with ABA Mobile or ABA PayWay gateway.</div>
+                 </div>
+                 <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${method === "ABA" ? "border-green-500 bg-green-500" : "border-royal-border"}`}>
+                   {method === "ABA" && <Check className="h-3 w-3 text-black" strokeWidth={3} />}
+                 </div>
+               </div>
+             </button>
           </div>
         </div>
 

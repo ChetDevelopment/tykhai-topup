@@ -181,9 +181,11 @@ export async function POST(req: NextRequest) {
           amountKhr: calcKhr(finalPrice, exchangeRate),
           currency: data.currency as PaymentCurrency,
           method: data.paymentMethod,
-          returnUrl: `${publicUrl}/order?number=${orderNumber}`,
+          returnUrl: `${publicUrl}/checkout/${orderNumber}`,
           cancelUrl: `${publicUrl}/games/${game.slug}`,
-          callbackUrl: `${publicUrl}/api/payment/webhook/bakong`,
+          callbackUrl: data.paymentMethod === "ABA" 
+            ? `${publicUrl}/api/payment/webhook/aba`
+            : `${publicUrl}/api/payment/webhook/bakong`,
           note: `Ty Khai TopUp · ${game.name} · ${product.name}`,
           customerEmail: data.customerEmail,
           metadata: {
